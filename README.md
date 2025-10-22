@@ -1,0 +1,3 @@
+Reddit Clone in Gleam
+A distributed Reddit-like social platform built with Gleam and OTP, featuring a concurrent engine that handles user registration, subreddit management, posting, hierarchical commenting, voting with karma calculation, personalized feeds, and direct messaging. The project includes a client simulator that spawns thousands of concurrent user processes to test the system, simulating realistic behavior with Zipf-distributed subreddit popularity, random connection patterns, and automated content generation. The engine and clients run as separate processes communicating via message passing, with comprehensive performance metrics tracking throughput, latency, and scalability.
+
