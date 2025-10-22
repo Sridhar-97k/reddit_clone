@@ -46,7 +46,7 @@ pub type SubredditMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(SubredditMessage), actor.StartError) {
-  actor.start(init_state(), handle_message)
+  actor.start(fn() { init_state() }, fn(msg, state) { handle_message(msg, state) })
 }
 
 pub fn create_subreddit(
@@ -114,7 +114,7 @@ fn init_state() -> SubredditManagerState {
 fn handle_message(
   message: SubredditMessage,
   state: SubredditManagerState,
-) -> actor.Next(SubredditMessage, SubredditManagerState) {
+) -> actor.Next(SubredditManagerState, SubredditMessage) {
   case message {
     CreateSubreddit(client, name, description, creator_id) -> {
       let result = case utils.validate_subreddit_name(name) {
