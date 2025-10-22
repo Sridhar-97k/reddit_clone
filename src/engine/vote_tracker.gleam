@@ -46,16 +46,8 @@ pub type VoteTrackerMessage {
 // ============================================================================
 // API
 // ============================================================================
-
 pub fn start() -> Result(Subject(VoteTrackerMessage), actor.StartError) {
-  actor.start_spec(actor.Spec(
-    init: fn() {
-      let state = init_state()
-      actor.Ready(state, process.new_selector())
-    },
-    init_timeout: 1000,
-    loop: handle_message,
-  ))
+  actor.start(init_state(), handle_message)
 }
 
 pub fn vote_post(

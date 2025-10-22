@@ -60,14 +60,7 @@ pub type PostStorageMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(PostStorageMessage), actor.StartError) {
-  actor.start_spec(actor.Spec(
-    init: fn() {
-      let state = init_state()
-      actor.Ready(state, process.new_selector())
-    },
-    init_timeout: 1000,
-    loop: handle_message,
-  ))
+  actor.start(init_state, handle_message)
 }
 
 pub fn create_post(
@@ -193,7 +186,7 @@ fn init_state() -> PostStorageState {
 fn handle_message(
   message: PostStorageMessage,
   state: PostStorageState,
-) -> actor.Next(PostStorageMessage, PostStorageState) {
+) -> actor.Next(PostStorageState, PostStorageMessage) {
   case message {
     CreatePost(
       client,

@@ -61,11 +61,9 @@ pub type UserRegistryMessage {
 // ============================================================================
 // API
 // ============================================================================
+
 pub fn start() -> Result(Subject(UserRegistryMessage), actor.StartError) {
-  case actor.start(actor.new(init_state()), handle_message) {
-    Ok(started) -> Ok(started.0)
-    Error(e) -> Error(e)
-  }
+  actor.start(init_state, handle_message)
 }
 
 pub fn register_user(
@@ -141,7 +139,7 @@ fn init_state() -> UserRegistryState {
   )
 }
 
-fn handle_message(
+pub fn handle_message(
   message: UserRegistryMessage,
   state: UserRegistryState,
 ) -> actor.Next(UserRegistryState, UserRegistryMessage) {
@@ -256,6 +254,7 @@ fn handle_message(
     GetUser(client, user_id) -> {
       case dict.get(state.users, user_id) {
         Ok(user) -> {
+          // Internal use - could add a specific response type
           process.send(client, protocol.UserProfileResponse(UserProfile(
             id: user.id,
             username: user.username,

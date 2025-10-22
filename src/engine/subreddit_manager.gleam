@@ -47,14 +47,7 @@ pub type SubredditMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(SubredditMessage), actor.StartError) {
-  actor.start_spec(actor.Spec(
-    init: fn() {
-      let state = init_state()
-      actor.Ready(state, process.new_selector())
-    },
-    init_timeout: 1000,
-    loop: handle_message,
-  ))
+  actor.start(init_state, handle_message)
 }
 
 pub fn create_subreddit(
