@@ -3,6 +3,7 @@ import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/list
 import gleam/otp/actor
+import gleam/result
 import shared/protocol.{type EngineResponse}
 import shared/types.{type Id, type Subreddit, Subreddit}
 import shared/utils
@@ -46,7 +47,14 @@ pub type SubredditMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(SubredditMessage), actor.StartError) {
-  actor.start(fn() { init_state() }, fn(msg, state) { handle_message(msg, state) })
+  actor.start_spec(actor.Spec(
+    init: fn() {
+      let state = init_state()
+      actor.Ready(state, process.new_selector())
+    },
+    init_timeout: 1000,
+    loop: handle_message,
+  ))
 }
 
 pub fn create_subreddit(
@@ -173,7 +181,7 @@ fn handle_message(
         Ok(subreddit) -> {
           let current_members =
             dict.get(state.members, subreddit_id)
-            |> gleam.result.unwrap([])
+            |> result.unwrap([])
 
           case list.contains(current_members, user_id) {
             True -> Error(protocol.AlreadySubscribed(user_id, subreddit_id))
@@ -221,7 +229,7 @@ fn handle_message(
         Ok(subreddit) -> {
           let current_members =
             dict.get(state.members, subreddit_id)
-            |> gleam.result.unwrap([])
+            |> result.unwrap([])
 
           case list.contains(current_members, user_id) {
             False -> Error(protocol.NotSubscribed(user_id, subreddit_id))

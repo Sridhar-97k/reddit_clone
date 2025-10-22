@@ -1,0 +1,105 @@
+High-Level Architecture Analysis
+1. Technology Stack Considerations
+
+Gleam for both engine and client simulator
+OTP (via Erlang) for concurrent process management
+Actor model for handling multiple users and real-time interactions
+Consider Mist (HTTP server) or raw TCP/message passing for client-engine communication in Part I
+
+2. Project Structure Approach
+reddit_clone/
+├── engine/          # Core Reddit engine
+├── client/          # Client simulator
+├── shared/          # Shared types and protocols
+└── test/            # Integration tests
+3. Phased Implementation Plan
+Phase 1: Data Models & Core Types (Start Here)
+
+Define all domain types (User, Post, Comment, Subreddit, DirectMessage, Vote)
+Create shared message protocol between client/engine
+Design the data structures for hierarchical comments
+Plan karma calculation logic
+
+Phase 2: Engine Foundation
+
+Implement engine as a GenServer/Actor
+User registry system
+Subreddit management system
+Post and comment storage (in-memory with ETS or process dictionary)
+Voting and karma aggregation
+Direct messaging queue per user
+
+Phase 3: Feed & Distribution Logic
+
+Feed generation algorithm (chronological? hot? top?)
+Subscription tracking
+Event distribution to connected users
+
+Phase 4: Client Simulator
+
+Client actor pool (spawn thousands)
+Zipf distribution implementation for subreddit popularity
+Random action generator (post, comment, vote, subscribe)
+Connection/disconnection simulation with timers
+
+Phase 5: Communication Layer
+
+Message passing protocol (engine ↔ clients)
+Consider using Gleam's message passing or Erlang ports
+Handle client registration and session management
+
+Phase 6: Metrics & Performance
+
+Track message latency
+Monitor throughput (posts/second, comments/second)
+Memory usage per simulated user
+Feed generation time
+
+4. Key Technical Decisions to Make
+A. Data Storage Strategy:
+
+In-memory only? (ETS tables via Erlang FFI)
+Process-based storage? (Each subreddit = actor)
+Centralized vs distributed storage?
+
+B. Concurrency Model:
+
+One actor per user? (could spawn thousands)
+Actor per subreddit?
+Centralized engine with message queue?
+
+C. Client-Engine Communication:
+
+Direct Erlang message passing (simplest for Part I)
+JSON over TCP sockets
+Binary protocol
+
+D. Comment Hierarchy:
+
+Tree structure with parent pointers
+Flat list with depth indicators
+Nested record types
+
+5. Recommended Starting Steps
+
+Sketch the type system first - This is crucial in Gleam
+Build a minimal engine that can handle one user, one subreddit
+Add one client simulator that can perform all actions
+Scale up - spawn multiple clients
+Add Zipf distribution and connection patterns
+Instrument with metrics
+
+6. Gleam-Specific Considerations
+
+Leverage OTP behaviors through Erlang interop (GenServers for engine)
+Use Gleam's Result type for error handling
+Pattern matching for message routing
+Consider gleam_erlang and gleam_otp packages
+Use gleam_stdlib for data structures
+
+7. Potential Challenges
+
+Handling hierarchical comments elegantly in Gleam's type system
+Implementing Zipf distribution accurately
+Managing thousands of concurrent actors efficiently
+Feed generation performance with large post volumes

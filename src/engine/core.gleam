@@ -47,7 +47,14 @@ pub type EngineMessage {
 
 /// Start the Reddit engine
 pub fn start() -> Result(Subject(EngineMessage), actor.StartError) {
-  actor.start(init_state(), handle_message)
+  actor.start_spec(actor.Spec(
+    init: fn() {
+      let state = init_state()
+      actor.Ready(state, process.new_selector())
+    },
+    init_timeout: 5000,
+    loop: handle_message,
+  ))
 }
 
 /// Send a request to the engine
@@ -102,7 +109,7 @@ fn init_state() -> EngineState {
 fn handle_message(
   message: EngineMessage,
   state: EngineState,
-) -> actor.Next(EngineState, EngineMessage) {
+) -> actor.Next(EngineMessage, EngineState) {
   case message {
     HandleRequest(request_id, client, request) -> {
       handle_client_request(state, request_id, client, request)
@@ -314,11 +321,11 @@ fn handle_client_request(
 
     // Connection Management
     protocol.Connect(user_id) -> {
-      register_connection(process.subject_owner(client), user_id, client)
+      let new_connections = dict.insert(state.active_connections, user_id, client)
+      process.send(client, protocol.Connected(user_id, get_timestamp()))
     }
 
     protocol.Disconnect(user_id) -> {
-      unregister_connection(process.subject_owner(client), user_id)
       process.send(client, protocol.Disconnected(user_id, get_timestamp()))
     }
 
