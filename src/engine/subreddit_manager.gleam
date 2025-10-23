@@ -46,8 +46,14 @@ pub type SubredditMessage {
 // API
 // ============================================================================
 
+/// Compilation error here. Have to debug
+
+
 pub fn start() -> Result(Subject(SubredditMessage), actor.StartError) {
-  actor.start(init_state, handle_message)
+  actor.new(init_state())
+  |> actor.on_message(handle_message)
+  |> actor.start()
+  |> result.map(fn(started) { started.data })
 }
 
 pub fn create_subreddit(
@@ -113,8 +119,8 @@ fn init_state() -> SubredditManagerState {
 }
 
 fn handle_message(
-  message: SubredditMessage,
   state: SubredditManagerState,
+  message: SubredditMessage,
 ) -> actor.Next(SubredditManagerState, SubredditMessage) {
   case message {
     CreateSubreddit(client, name, description, creator_id) -> {

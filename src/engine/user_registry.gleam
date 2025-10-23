@@ -63,7 +63,10 @@ pub type UserRegistryMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(UserRegistryMessage), actor.StartError) {
-  actor.start(init_state, handle_message)
+  actor.new(init_state())
+  |> actor.on_message(handle_message)
+  |> actor.start()
+  |> result.map(fn(started) { started.data })
 }
 
 pub fn register_user(

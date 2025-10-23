@@ -8,7 +8,7 @@ import gleam/result
 import shared/protocol.{type EngineResponse}
 import shared/types.{type Comment, type Feed, type Id, type Post, Comment, Feed, FeedItem, Post}
 import shared/utils
-
+import engine/feed_generator
 // ============================================================================
 // State
 // ============================================================================
@@ -60,7 +60,10 @@ pub type PostStorageMessage {
 // ============================================================================
 
 pub fn start() -> Result(Subject(PostStorageMessage), actor.StartError) {
-  actor.start(init_state, handle_message)
+  actor.new(init_state())
+  |> actor.on_message(handle_message)
+  |> actor.start()
+  |> result.map(fn(started) { started.data })
 }
 
 pub fn create_post(
@@ -184,8 +187,8 @@ fn init_state() -> PostStorageState {
 }
 
 fn handle_message(
-  message: PostStorageMessage,
   state: PostStorageState,
+  message: PostStorageMessage,
 ) -> actor.Next(PostStorageState, PostStorageMessage) {
   case message {
     CreatePost(
@@ -299,79 +302,78 @@ fn handle_message(
       }
     }
 
-    CreateComment(client, author_id, post_id, parent_comment_id, content) -> {
-      let result = {
-        use valid_content <- result.try(utils.validate_comment_content(content))
-        use post <- result.try(
-          dict.get(state.posts, post_id)
-          |> result.replace_error(protocol.PostNotFound(post_id)),
-        )
+   CreateComment(client, author_id, post_id, parent_comment_id, content) -> {
+  let result: Result(#(PostStorageState, Comment), protocol.EngineError) = {
+    use valid_content <- result.try(utils.validate_comment_content(content))
+    use post <- result.try(
+      dict.get(state.posts, post_id)
+      |> result.replace_error(protocol.PostNotFound(post_id)),
+    )
 
-        // Validate parent comment if specified
-        let depth = case parent_comment_id {
-          None -> 0
-          Some(parent_id) -> {
-            case dict.get(state.comments, parent_id) {
-              Error(_) -> {
-                // Parent not found
-                return Error(protocol.ParentCommentNotFound(parent_id))
-              }
-              Ok(parent) -> parent.depth + 1
-            }
-          }
-        }
-
-        let comment_id = utils.generate_comment_id()
-        let comment =
-          Comment(
-            id: comment_id,
-            author_id: author_id,
-            author_username: "user_" <> author_id,
-            post_id: post_id,
-            parent_comment_id: parent_comment_id,
-            content: valid_content,
-            upvotes: 0,
-            downvotes: 0,
-            depth: depth,
-            created_at: utils.get_current_timestamp(),
-            children: [],
-          )
-
-        let new_comments = dict.insert(state.comments, comment_id, comment)
-        let existing_comments =
-          dict.get(state.post_comments, post_id)
-          |> result.unwrap([])
-        let updated_comments = [comment_id, ..existing_comments]
-        let new_post_comments =
-          dict.insert(state.post_comments, post_id, updated_comments)
-
-        // Update post comment count
-        let updated_post =
-          Post(..post, comment_count: post.comment_count + 1)
-        let new_posts = dict.insert(state.posts, post_id, updated_post)
-
-        let new_state =
-          PostStorageState(
-            posts: new_posts,
-            comments: new_comments,
-            post_comments: new_post_comments,
-            subreddit_posts: state.subreddit_posts,
-          )
-
-        Ok(#(new_state, comment))
-      }
-
-      case result {
-        Ok(#(new_state, comment)) -> {
-          process.send(client, protocol.CommentCreated(comment))
-          actor.continue(new_state)
-        }
-        Error(error) -> {
-          process.send(client, protocol.Error(error))
-          actor.continue(state)
+    // Validate parent comment if specified
+    let depth_result = case parent_comment_id {
+      None -> Ok(0)
+      Some(parent_id) -> {
+        case dict.get(state.comments, parent_id) {
+          Error(_) -> Error(protocol.ParentCommentNotFound(parent_id))
+          Ok(parent) -> Ok(parent.depth + 1)
         }
       }
     }
+
+    use depth <- result.try(depth_result)
+
+    let comment_id = utils.generate_comment_id()
+    let comment =
+      Comment(
+        id: comment_id,
+        author_id: author_id,
+        author_username: "user_" <> author_id,
+        post_id: post_id,
+        parent_comment_id: parent_comment_id,
+        content: valid_content,
+        upvotes: 0,
+        downvotes: 0,
+        depth: depth,
+        created_at: utils.get_current_timestamp(),
+        children: [],
+      )
+
+    let new_comments = dict.insert(state.comments, comment_id, comment)
+    let existing_comments =
+      dict.get(state.post_comments, post_id)
+      |> result.unwrap([])
+    let updated_comments = [comment_id, ..existing_comments]
+    let new_post_comments =
+      dict.insert(state.post_comments, post_id, updated_comments)
+
+    // Update post comment count
+    let updated_post =
+      Post(..post, comment_count: post.comment_count + 1)
+    let new_posts = dict.insert(state.posts, post_id, updated_post)
+
+    let new_state =
+      PostStorageState(
+        posts: new_posts,
+        comments: new_comments,
+        post_comments: new_post_comments,
+        subreddit_posts: state.subreddit_posts,
+      )
+
+    Ok(#(new_state, comment))
+  }
+
+  case result {
+    Ok(#(new_state, comment)) -> {
+      process.send(client, protocol.CommentCreated(comment))
+      actor.continue(new_state)
+    }
+    Error(error) -> {
+      process.send(client, protocol.Error(error))
+      actor.continue(state)
+    }
+  }
+}
 
     GetComment(client, comment_id) -> {
       case dict.get(state.comments, comment_id) {
@@ -449,34 +451,29 @@ fn handle_message(
       actor.continue(new_state)
     }
 
-    GetFeed(client, user_id, limit) -> {
-      // Simple feed: all posts sorted by time
-      let all_posts = dict.values(state.posts)
-      let sorted = utils.sort_posts_by_new(all_posts)
-      let limited = list.take(sorted, limit)
-
-      // TODO: Add subreddit info
-      let feed_items = list.map(limited, fn(post) {
-        FeedItem(post: post, subreddit: types.Subreddit(
-          id: post.subreddit_id,
-          name: post.subreddit_name,
-          description: "",
-          created_by: "",
-          created_at: 0,
-          member_count: 0,
-          post_count: 0,
-        ))
-      })
-
-      let feed = Feed(items: feed_items, generated_at: utils.get_current_timestamp())
-      process.send(client, protocol.FeedResponse(feed))
-      actor.continue(state)
-    }
+GetFeed(client, user_id, limit) -> {
+  // Get all posts
+  let all_posts = dict.values(state.posts)
+  
+  // For now, create a simple feed config (Hot algorithm)
+  let config = feed_generator.hot_config(limit)
+  
+  // Generate feed with empty subscriptions (all posts)
+  let feed = feed_generator.generate_user_feed(
+    all_posts,
+    dict.new(), // TODO: Get subreddits from subreddit_manager
+    [],
+    config,
+  )
+  
+  process.send(client, protocol.FeedResponse(feed))
+  actor.continue(state)
+}
 
     GetHomeFeed(client, user_id, limit) -> {
-      // TODO: Filter by user's subscriptions
-      // For now, same as GetFeed
-      handle_message(GetFeed(client, user_id, limit), state)
-    }
+  // TODO: Get user's subscribed subreddits from user_registry
+  // For now, same as GetFeed
+  handle_message(state, GetFeed(client, user_id, limit))
+}
   }
 }
