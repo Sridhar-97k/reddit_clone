@@ -11,6 +11,7 @@ import shared/types.{type Id}
 import engine/subreddit_manager
 import engine/post_storage
 import engine/vote_tracker
+import engine/user_registry
 
 // ============================================================================
 // Engine State
@@ -18,7 +19,8 @@ import engine/vote_tracker
 
 pub type EngineState {
   EngineState(
-    combined_manager: Subject(subreddit_manager.CombinedMessage),
+    user_registry: Subject(user_registry.UserRegistryMessage),
+    subreddit_manager: Subject(subreddit_manager.SubredditMessage),
     post_storage: Subject(post_storage.PostStorageMessage),
     vote_tracker: Subject(vote_tracker.VoteTrackerMessage),
     active_connections: Dict(Id, Subject(EngineResponse)),
@@ -85,12 +87,14 @@ pub fn shutdown(engine: Subject(EngineMessage)) -> Nil {
 // ============================================================================
 
 fn init_state() -> EngineState {
-  let assert Ok(combined_mgr) = subreddit_manager.start()
+  let assert Ok(user_reg) = user_registry.start()
+  let assert Ok(subreddit_mgr) = subreddit_manager.start()
   let assert Ok(post_store) = post_storage.start()
   let assert Ok(vote_track) = vote_tracker.start()
 
   EngineState(
-    combined_manager: combined_mgr,
+    user_registry: user_reg,
+    subreddit_manager: subreddit_mgr,
     post_storage: post_store,
     vote_tracker: vote_track,
     active_connections: dict.new(),

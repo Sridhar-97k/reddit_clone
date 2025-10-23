@@ -95,9 +95,9 @@ fn init_state() -> VoteTrackerState {
 }
 
 fn handle_message(
-  message: VoteTrackerMessage,
   state: VoteTrackerState,
-) -> actor.Next(VoteTrackerMessage, VoteTrackerState) {
+  message: VoteTrackerMessage,
+) -> actor.Next( VoteTrackerMessage,VoteTrackerState) {
   case message {
     VotePost(client, user_id, post_id, vote_type) -> {
       handle_vote(state, client, user_id, post_id, vote_type)
@@ -189,11 +189,11 @@ fn handle_vote(
             dict.get(state.target_votes, target_id)
             |> result.unwrap(#(0, 0))
 
-          let new_counts = case existing_vote.vote_type, vote_type {
-            types.Upvote, types.Downvote -> #(upvotes - 1, downvotes + 1)
-            types.Downvote, types.Upvote -> #(upvotes + 1, downvotes - 1)
-            _, _ -> #(upvotes, downvotes)
-          }
+         let new_counts = case existing_vote.vote_type, vote_type {
+  types.Upvote, types.Downvote -> #(upvotes - 1, downvotes + 1)
+  types.Downvote, types.Upvote -> #(upvotes + 1, downvotes - 1)
+  _, _ -> #(upvotes, downvotes)
+}
 
           let new_target_votes =
             dict.insert(state.target_votes, target_id, new_counts)
@@ -232,9 +232,9 @@ fn handle_vote(
         |> result.unwrap(#(0, 0))
 
       let new_counts = case vote_type {
-        types.Upvote -> #(upvotes + 1, downvotes)
-        types.Downvote -> #(upvotes, downvotes + 1)
-      }
+  types.Upvote -> #(upvotes + 1, downvotes)
+  types.Downvote -> #(upvotes, downvotes + 1)
+}
 
       let new_target_votes =
         dict.insert(state.target_votes, target_id, new_counts)

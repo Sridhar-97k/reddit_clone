@@ -304,7 +304,10 @@ fn handle_message(
 
    CreateComment(client, author_id, post_id, parent_comment_id, content) -> {
   let result: Result(#(PostStorageState, Comment), protocol.EngineError) = {
-    use valid_content <- result.try(utils.validate_comment_content(content))
+    use valid_content <- result.try(
+      utils.validate_comment_content(content)
+      |> result.map_error(protocol.InvalidComment)
+    )
     use post <- result.try(
       dict.get(state.posts, post_id)
       |> result.replace_error(protocol.PostNotFound(post_id)),

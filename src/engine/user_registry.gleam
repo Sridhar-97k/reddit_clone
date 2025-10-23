@@ -143,8 +143,8 @@ fn init_state() -> UserRegistryState {
 }
 
 pub fn handle_message(
-  message: UserRegistryMessage,
   state: UserRegistryState,
+  message: UserRegistryMessage,
 ) -> actor.Next(UserRegistryState, UserRegistryMessage) {
   case message {
     RegisterUser(client, username, password) -> {
