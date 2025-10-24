@@ -4,7 +4,7 @@ import gleam/otp/actor
 import gleam/dict.{type Dict}
 import gleam/result
 import shared/protocol.{
-  type ClientRequest, type EngineResponse, type Message,
+  type ClientRequest, type EngineResponse,
 }
 import shared/types.{type Id}
 
@@ -26,6 +26,7 @@ pub type EngineState {
     active_connections: Dict(Id, Subject(EngineResponse)),
   )
 }
+
 // ============================================================================
 // Engine Messages
 // ============================================================================
@@ -102,13 +103,13 @@ fn init_state() -> EngineState {
 }
 
 fn handle_message(
-  message: EngineMessage,
   state: EngineState,
+  message: EngineMessage,
 ) -> actor.Next(EngineState, EngineMessage) {
   case message {
     HandleRequest(request_id, client, request) -> {
-      handle_client_request(state, request_id, client, request)
-      actor.continue(state)
+      let new_state = handle_client_request(state, request_id, client, request)
+      actor.continue(new_state)
     }
 
     RegisterConnection(user_id, client) -> {
@@ -130,7 +131,7 @@ fn handle_message(
     }
 
     Shutdown -> {
-      actor.Stop(process.Normal)
+      actor.stop()
     }
   }
 }
@@ -140,7 +141,7 @@ fn handle_client_request(
   request_id: String,
   client: Subject(EngineResponse),
   request: ClientRequest,
-) -> Nil {
+) -> EngineState {
   case request {
     // User Operations
     protocol.RegisterUser(username, password) -> {
@@ -150,14 +151,17 @@ fn handle_client_request(
         username,
         password,
       )
+      state
     }
 
     protocol.LoginUser(username, password) -> {
       user_registry.login_user(state.user_registry, client, username, password)
+      state
     }
 
     protocol.GetUserProfile(user_id) -> {
       user_registry.get_user_profile(state.user_registry, client, user_id)
+      state
     }
 
     // Subreddit Operations
@@ -169,6 +173,7 @@ fn handle_client_request(
         description,
         creator_id,
       )
+      state
     }
 
     protocol.JoinSubreddit(user_id, subreddit_id) -> {
@@ -178,6 +183,13 @@ fn handle_client_request(
         user_id,
         subreddit_id,
       )
+      // Also update user registry
+      user_registry.subscribe_to_subreddit(
+        state.user_registry,
+        user_id,
+        subreddit_id,
+      )
+      state
     }
 
     protocol.LeaveSubreddit(user_id, subreddit_id) -> {
@@ -187,6 +199,13 @@ fn handle_client_request(
         user_id,
         subreddit_id,
       )
+      // Also update user registry
+      user_registry.unsubscribe_from_subreddit(
+        state.user_registry,
+        user_id,
+        subreddit_id,
+      )
+      state
     }
 
     protocol.GetSubreddit(subreddit_id) -> {
@@ -195,10 +214,12 @@ fn handle_client_request(
         client,
         subreddit_id,
       )
+      state
     }
 
     protocol.ListSubreddits -> {
       subreddit_manager.list_subreddits(state.subreddit_manager, client)
+      state
     }
 
     // Post Operations
@@ -213,10 +234,17 @@ fn handle_client_request(
         is_repost,
         original_post_id,
       )
+      // Increment subreddit post count
+      subreddit_manager.increment_post_count(
+        state.subreddit_manager,
+        subreddit_id,
+      )
+      state
     }
 
     protocol.GetPost(post_id) -> {
       post_storage.get_post(state.post_storage, client, post_id)
+      state
     }
 
     protocol.GetSubredditPosts(subreddit_id, limit) -> {
@@ -226,10 +254,12 @@ fn handle_client_request(
         subreddit_id,
         limit,
       )
+      state
     }
 
     protocol.DeletePost(post_id, user_id) -> {
       post_storage.delete_post(state.post_storage, client, post_id, user_id)
+      state
     }
 
     // Comment Operations
@@ -242,18 +272,22 @@ fn handle_client_request(
         parent_comment_id,
         content,
       )
+      state
     }
 
     protocol.GetPostComments(post_id) -> {
       post_storage.get_post_comments(state.post_storage, client, post_id)
+      state
     }
 
     protocol.GetComment(comment_id) -> {
       post_storage.get_comment(state.post_storage, client, comment_id)
+      state
     }
 
     protocol.DeleteComment(comment_id, user_id) -> {
       post_storage.delete_comment(state.post_storage, client, comment_id, user_id)
+      state
     }
 
     // Voting Operations
@@ -265,6 +299,7 @@ fn handle_client_request(
         post_id,
         vote_type,
       )
+      state
     }
 
     protocol.VoteComment(user_id, comment_id, vote_type) -> {
@@ -275,19 +310,23 @@ fn handle_client_request(
         comment_id,
         vote_type,
       )
+      state
     }
 
     protocol.RemoveVote(user_id, target_id) -> {
       vote_tracker.remove_vote(state.vote_tracker, client, user_id, target_id)
+      state
     }
 
     // Feed Operations
     protocol.GetFeed(user_id, limit) -> {
       post_storage.get_feed(state.post_storage, client, user_id, limit)
+      state
     }
 
     protocol.GetHomeFeed(user_id, limit) -> {
       post_storage.get_home_feed(state.post_storage, client, user_id, limit)
+      state
     }
 
     // Direct Message Operations
@@ -299,10 +338,12 @@ fn handle_client_request(
         to_user_id,
         content,
       )
+      state
     }
 
     protocol.GetDirectMessages(user_id) -> {
       user_registry.get_direct_messages(state.user_registry, client, user_id)
+      state
     }
 
     protocol.MarkMessageAsRead(user_id, message_id) -> {
@@ -312,26 +353,38 @@ fn handle_client_request(
         user_id,
         message_id,
       )
+      state
     }
 
     // Connection Management
     protocol.Connect(user_id) -> {
-      register_connection(process.subject_owner(client), user_id, client)
+      let new_connections = dict.insert(state.active_connections, user_id, client)
+      process.send(client, protocol.Connected(user_id, get_timestamp()))
+      EngineState(..state, active_connections: new_connections)
     }
 
     protocol.Disconnect(user_id) -> {
-      unregister_connection(process.subject_owner(client), user_id)
+      let new_connections = dict.delete(state.active_connections, user_id)
       process.send(client, protocol.Disconnected(user_id, get_timestamp()))
+      EngineState(..state, active_connections: new_connections)
     }
 
     protocol.Heartbeat(user_id) -> {
       process.send(client, protocol.HeartbeatAck(user_id, get_timestamp()))
+      state
     }
   }
 }
 
 // Helper to get current timestamp
 fn get_timestamp() -> Int {
-  // TODO: Use proper Erlang timestamp
-  0
+  // Use Erlang's system_time
+  erlang_system_time_millisecond()
+}
+
+@external(erlang, "erlang", "system_time")
+fn erlang_system_time(unit: String) -> Int
+
+fn erlang_system_time_millisecond() -> Int {
+  erlang_system_time("millisecond")
 }

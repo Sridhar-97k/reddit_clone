@@ -103,6 +103,22 @@ pub fn update_user_karma(
   process.send(registry, UpdateUserKarma(user_id, karma_delta))
 }
 
+pub fn subscribe_to_subreddit(
+  registry: Subject(UserRegistryMessage),
+  user_id: Id,
+  subreddit_id: Id,
+) -> Nil {
+  process.send(registry, SubscribeToSubreddit(user_id, subreddit_id))
+}
+
+pub fn unsubscribe_from_subreddit(
+  registry: Subject(UserRegistryMessage),
+  user_id: Id,
+  subreddit_id: Id,
+) -> Nil {
+  process.send(registry, UnsubscribeFromSubreddit(user_id, subreddit_id))
+}
+
 pub fn send_direct_message(
   registry: Subject(UserRegistryMessage),
   client: Subject(EngineResponse),
@@ -257,7 +273,6 @@ pub fn handle_message(
     GetUser(client, user_id) -> {
       case dict.get(state.users, user_id) {
         Ok(user) -> {
-          // Internal use - could add a specific response type
           process.send(client, protocol.UserProfileResponse(UserProfile(
             id: user.id,
             username: user.username,
@@ -288,10 +303,15 @@ pub fn handle_message(
       let new_state = case dict.get(state.users, user_id) {
         Error(_) -> state
         Ok(user) -> {
-          let updated_subs = [subreddit_id, ..user.subscribed_subreddits]
-          let updated_user = User(..user, subscribed_subreddits: updated_subs)
-          let new_users = dict.insert(state.users, user_id, updated_user)
-          UserRegistryState(..state, users: new_users)
+          case list.contains(user.subscribed_subreddits, subreddit_id) {
+            True -> state
+            False -> {
+              let updated_subs = [subreddit_id, ..user.subscribed_subreddits]
+              let updated_user = User(..user, subscribed_subreddits: updated_subs)
+              let new_users = dict.insert(state.users, user_id, updated_user)
+              UserRegistryState(..state, users: new_users)
+            }
+          }
         }
       }
       actor.continue(new_state)
@@ -411,12 +431,10 @@ pub fn handle_message(
 // ============================================================================
 
 fn hash_password(password: String) -> String {
-  // TODO: Use proper password hashing (bcrypt/argon2)
-  // For now, just a placeholder
+  // Simple hash for simulation - in production use bcrypt/argon2
   "hashed_" <> password
 }
 
 fn verify_password(password: String, hash: String) -> Bool {
-  // TODO: Use proper password verification
   hash == "hashed_" <> password
 }

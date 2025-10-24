@@ -112,21 +112,6 @@ pub type UserAction {
 // API
 // ============================================================================
 
-// pub fn start(
-//   engine: Subject(core.EngineMessage),
-//   config: SimulationConfig,
-// ) -> Result(Subject(SimulatorMessage), actor.StartError) {
-//   let init_state = SimulatorState(
-//     engine: engine,
-//     config: config,
-//     users: [],
-//     subreddits: [],
-//     metrics: init_metrics(),
-//   )
-  
-//   actor.start(init_state, handle_simulator_message)
-// }
-
 pub fn start(
   engine: Subject(core.EngineMessage),
   config: SimulationConfig,
@@ -144,8 +129,6 @@ pub fn start(
   |> actor.start()
   |> result.map(fn(started) { started.data })
 }
-
-
 
 pub fn start_simulation(simulator: Subject(SimulatorMessage)) -> Nil {
   process.send(simulator, StartSimulation)
@@ -168,15 +151,15 @@ fn init_metrics() -> SimulationMetrics {
 }
 
 fn handle_simulator_message(
-  message: SimulatorMessage,
   state: SimulatorState,
+  message: SimulatorMessage,
 ) -> actor.Next(SimulatorState, SimulatorMessage) {
   case message {
     StartSimulation -> {
       io.println("🚀 Starting simulation phase...")
       
       // Phase 1: Register users
-      io.println("\n📝 Phase 1: Registering users...")
+      io.println("\n👥 Phase 1: Registering users...")
       let new_state = register_users(state)
       io.println("✅ " <> int.to_string(new_state.config.num_users) <> " users registered")
       
@@ -218,7 +201,7 @@ fn handle_simulator_message(
 
     Shutdown -> {
       io.println("\n🛑 Shutting down simulator...")
-      actor.Stop(process.Normal)
+      actor.stop()
     }
   }
 }
@@ -284,7 +267,14 @@ fn create_subreddits(state: SimulatorState) -> SimulatorState {
     
     // Pick a random user as creator
     let creator_index = i % list.length(state.users)
-    let assert Ok(creator) = list.at(state.users, creator_index)
+    let creator = case get_at(state.users, creator_index) {
+      Ok(c) -> c
+      Error(_) -> {
+        // Fallback to first user
+        let assert Ok(first) = list.first(state.users)
+        first
+      }
+    }
     
     // Send create subreddit request
     core.handle_request(
@@ -325,7 +315,7 @@ fn users_join_subreddits(state: SimulatorState) -> SimulatorState {
     })
     
     let joined_subreddits = list.filter_map(subreddit_indices, fn(idx) {
-      case list.at(state.subreddits, idx) {
+      case get_at(state.subreddits, idx) {
         Ok(sub_id) -> {
           core.handle_request(
             state.engine,
@@ -393,7 +383,7 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
     True -> state
     False -> {
       let sub_idx = int.random(list.length(user.subscribed_subreddits))
-      case list.at(user.subscribed_subreddits, sub_idx) {
+      case get_at(user.subscribed_subreddits, sub_idx) {
         Ok(subreddit_id) -> {
           let titles = [
             "Check out this awesome feature!",
@@ -404,7 +394,10 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
           ]
           
           let title_idx = int.random(list.length(titles))
-          let assert Ok(title) = list.at(titles, title_idx)
+          let title = case get_at(titles, title_idx) {
+            Ok(t) -> t
+            Error(_) -> "Random Post Title"
+          }
           
           let content = "This is a simulated post content about " <> title
           
@@ -437,7 +430,6 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
 
 fn create_random_comment(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
   // For simplicity, comment on a random post
-  // In real scenario, we'd track post IDs
   let comment_content = "Great post! Thanks for sharing."
   
   // Generate a fake post ID for demo
@@ -494,7 +486,7 @@ fn get_user_feed(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
 
 fn send_random_message(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
   let recipient_idx = int.random(list.length(state.users))
-  case list.at(state.users, recipient_idx) {
+  case get_at(state.users, recipient_idx) {
     Ok(recipient) -> {
       case recipient.id == user.id {
         True -> state
@@ -527,28 +519,11 @@ fn send_random_message(state: SimulatorState, user: SimulatedUser) -> SimulatorS
 // User Client Actor
 // ============================================================================
 
-// fn create_user_client() -> Result(Subject(EngineResponse), actor.StartError) {
-//   actor.start(Nil, fn(response, _state) {
-//     // Handle engine responses
-//     case response {
-//       protocol.UserRegistered(_, _) -> actor.continue(Nil)
-//       protocol.Error(_) -> actor.continue(Nil)
-//       _ -> actor.continue(Nil)
-//     }
-//   })
-// }
-
-
-
 fn create_user_client() -> Result(Subject(EngineResponse), actor.StartError) {
   actor.new(Nil)
-  |> actor.on_message(fn(response, _state) {
-    // Handle engine responses
-    case response {
-      protocol.UserRegistered(_, _) -> actor.continue(Nil)
-      protocol.Error(_) -> actor.continue(Nil)
-      _ -> actor.continue(Nil)
-    }
+  |> actor.on_message(fn(_state, response: EngineResponse) {
+    // Handle engine responses silently
+    actor.continue(Nil)
   })
   |> actor.start()
   |> result.map(fn(started) { started.data })
@@ -566,6 +541,18 @@ fn handle_user_action(
   state
 }
 
+/// Get element at index (helper since list.at doesn't exist in older Gleam)
+fn get_at(list: List(a), index: Int) -> Result(a, Nil) {
+  case index < 0 {
+    True -> Error(Nil)
+    False -> {
+      list
+      |> list.drop(index)
+      |> list.first()
+    }
+  }
+}
+
 fn print_metrics(metrics: SimulationMetrics) -> Nil {
   io.println("\n📊 Current Metrics:")
   io.println("  Users: " <> int.to_string(metrics.users_registered))
@@ -578,9 +565,9 @@ fn print_metrics(metrics: SimulationMetrics) -> Nil {
 }
 
 fn print_final_metrics(metrics: SimulationMetrics) -> Nil {
-  io.println("\n" <> "="  <> " Final Simulation Results " <> "=")
+  io.println("\n========== Final Simulation Results ==========")
   print_metrics(metrics)
-  io.println("=" <> "=" <> "=")
+  io.println("==============================================")
 }
 
 fn print_status(state: SimulatorState) -> Nil {

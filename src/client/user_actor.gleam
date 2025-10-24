@@ -3,9 +3,10 @@ import gleam/erlang/process.{type Subject}
 import gleam/otp/actor
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{type Option, None, Some}
+import gleam/result
 import shared/protocol.{type ClientRequest, type EngineResponse}
-import shared/types.{type Id}
+import shared/types.{type Id, Upvote, Downvote}
 import engine/core
 
 // ============================================================================
@@ -14,7 +15,6 @@ import engine/core
 
 pub type UserActorState {
   UserActorState(
-    user_id: Option(Id),
     username: String,
     engine: Subject(core.EngineMessage),
     subscribed_subreddits: List(Id),
@@ -59,7 +59,6 @@ pub fn start(
   engine: Subject(core.EngineMessage),
 ) -> Result(Subject(UserActorMessage), actor.StartError) {
   let init_state = UserActorState(
-    user_id: None,
     username: username,
     engine: engine,
     subscribed_subreddits: [],
@@ -100,8 +99,8 @@ pub fn shutdown(user: Subject(UserActorMessage)) -> Nil {
 // ============================================================================
 
 fn handle_message(
-  message: UserActorMessage,
   state: UserActorState,
+  message: UserActorMessage,
 ) -> actor.Next(UserActorState, UserActorMessage) {
   case message {
     PerformAction(action) -> {
@@ -110,36 +109,29 @@ fn handle_message(
     }
 
     Connect -> {
-      case state.user_id {
-        Some(user_id) -> {
-          // Send connect request to engine
-          let client = process.new_subject()
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.Connect(user_id),
-          )
-          actor.continue(UserActorState(..state, is_connected: True))
-        }
-        None -> actor.continue(state)
-      }
+      // For simulation, we don't track user_id separately
+      // The username serves as identifier
+      let client = process.new_subject()
+      let user_id = "user_" <> state.username
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.Connect(user_id),
+      )
+      actor.continue(UserActorState(..state, is_connected: True))
     }
 
     Disconnect -> {
-      case state.user_id {
-        Some(user_id) -> {
-          let client = process.new_subject()
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.Disconnect(user_id),
-          )
-          actor.continue(UserActorState(..state, is_connected: False))
-        }
-        None -> actor.continue(state)
-      }
+      let client = process.new_subject()
+      let user_id = "user_" <> state.username
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.Disconnect(user_id),
+      )
+      actor.continue(UserActorState(..state, is_connected: False))
     }
 
     GetStats -> {
@@ -148,13 +140,14 @@ fn handle_message(
     }
 
     Shutdown -> {
-      actor.Stop(process.Normal)
+      actor.stop()
     }
   }
 }
 
 fn execute_action(state: UserActorState, action: UserAction) -> UserActorState {
   let client = process.new_subject()
+  let user_id = "user_" <> state.username
 
   case action {
     Register -> {
@@ -166,10 +159,7 @@ fn execute_action(state: UserActorState, action: UserAction) -> UserActorState {
         protocol.RegisterUser(state.username, password),
       )
       
-      // TODO: Wait for response to get user_id
-      // For now, simulate by generating an ID
-      let user_id = "user_" <> state.username
-      UserActorState(..state, user_id: Some(user_id), action_count: state.action_count + 1)
+      UserActorState(..state, action_count: state.action_count + 1)
     }
 
     Login -> {
@@ -184,150 +174,115 @@ fn execute_action(state: UserActorState, action: UserAction) -> UserActorState {
     }
 
     CreatePost(subreddit_id, title, content) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.CreatePost(
-              user_id,
-              subreddit_id,
-              title,
-              content,
-              False,
-              None,
-            ),
-          )
-          UserActorState(
-            ..state,
-            posts_created: state.posts_created + 1,
-            action_count: state.action_count + 1,
-          )
-        }
-        None -> state
-      }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.CreatePost(
+          user_id,
+          subreddit_id,
+          title,
+          content,
+          False,
+          None,
+        ),
+      )
+      UserActorState(
+        ..state,
+        posts_created: state.posts_created + 1,
+        action_count: state.action_count + 1,
+      )
     }
 
     CreateComment(post_id, content) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.CreateComment(user_id, post_id, None, content),
-          )
-          UserActorState(
-            ..state,
-            comments_created: state.comments_created + 1,
-            action_count: state.action_count + 1,
-          )
-        }
-        None -> state
-      }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.CreateComment(user_id, post_id, None, content),
+      )
+      UserActorState(
+        ..state,
+        comments_created: state.comments_created + 1,
+        action_count: state.action_count + 1,
+      )
     }
 
     VotePost(post_id, upvote) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          let vote_type = case upvote {
-            True -> types.Upvote
-            False -> types.Downvote
-          }
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.VotePost(user_id, post_id, vote_type),
-          )
-          UserActorState(
-            ..state,
-            votes_cast: state.votes_cast + 1,
-            action_count: state.action_count + 1,
-          )
-        }
-        None -> state
+      let vote_type = case upvote {
+        True -> Upvote
+        False -> Downvote
       }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.VotePost(user_id, post_id, vote_type),
+      )
+      UserActorState(
+        ..state,
+        votes_cast: state.votes_cast + 1,
+        action_count: state.action_count + 1,
+      )
     }
 
     JoinSubreddit(subreddit_id) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.JoinSubreddit(user_id, subreddit_id),
-          )
-          
-          let new_subs = case list.contains(state.subscribed_subreddits, subreddit_id) {
-            True -> state.subscribed_subreddits
-            False -> [subreddit_id, ..state.subscribed_subreddits]
-          }
-          
-          UserActorState(
-            ..state,
-            subscribed_subreddits: new_subs,
-            action_count: state.action_count + 1,
-          )
-        }
-        None -> state
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.JoinSubreddit(user_id, subreddit_id),
+      )
+      
+      let new_subs = case list.contains(state.subscribed_subreddits, subreddit_id) {
+        True -> state.subscribed_subreddits
+        False -> [subreddit_id, ..state.subscribed_subreddits]
       }
+      
+      UserActorState(
+        ..state,
+        subscribed_subreddits: new_subs,
+        action_count: state.action_count + 1,
+      )
     }
 
     LeaveSubreddit(subreddit_id) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.LeaveSubreddit(user_id, subreddit_id),
-          )
-          
-          let new_subs = list.filter(state.subscribed_subreddits, fn(id) {
-            id != subreddit_id
-          })
-          
-          UserActorState(
-            ..state,
-            subscribed_subreddits: new_subs,
-            action_count: state.action_count + 1,
-          )
-        }
-        None -> state
-      }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.LeaveSubreddit(user_id, subreddit_id),
+      )
+      
+      let new_subs = list.filter(state.subscribed_subreddits, fn(id) {
+        id != subreddit_id
+      })
+      
+      UserActorState(
+        ..state,
+        subscribed_subreddits: new_subs,
+        action_count: state.action_count + 1,
+      )
     }
 
     ViewFeed -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.GetFeed(user_id, 25),
-          )
-          UserActorState(..state, action_count: state.action_count + 1)
-        }
-        None -> state
-      }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.GetFeed(user_id, 25),
+      )
+      UserActorState(..state, action_count: state.action_count + 1)
     }
 
     SendMessage(to_user, content) -> {
-      case state.user_id {
-        Some(user_id) -> {
-          core.handle_request(
-            state.engine,
-            generate_request_id(),
-            client,
-            protocol.SendDirectMessage(user_id, "user_" <> to_user, content),
-          )
-          UserActorState(..state, action_count: state.action_count + 1)
-        }
-        None -> state
-      }
+      core.handle_request(
+        state.engine,
+        generate_request_id(),
+        client,
+        protocol.SendDirectMessage(user_id, "user_" <> to_user, content),
+      )
+      UserActorState(..state, action_count: state.action_count + 1)
     }
   }
 }

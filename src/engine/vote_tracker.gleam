@@ -17,8 +17,6 @@ pub type VoteTrackerState {
     votes: Dict(String, Vote),
     // Target votes: target_id -> (upvotes, downvotes)
     target_votes: Dict(Id, #(Int, Int)),
-    // User karma tracking: user_id -> karma_delta
-    user_karma: Dict(Id, Int),
   )
 }
 
@@ -40,12 +38,12 @@ pub type VoteTrackerMessage {
     vote_type: VoteType,
   )
   RemoveVote(client: Subject(EngineResponse), user_id: Id, target_id: Id)
-  GetVoteStats(target_id: Id)
 }
 
 // ============================================================================
 // API
 // ============================================================================
+
 pub fn start() -> Result(Subject(VoteTrackerMessage), actor.StartError) {
   actor.new(init_state())
   |> actor.on_message(handle_message)
@@ -90,14 +88,13 @@ fn init_state() -> VoteTrackerState {
   VoteTrackerState(
     votes: dict.new(),
     target_votes: dict.new(),
-    user_karma: dict.new(),
   )
 }
 
 fn handle_message(
   state: VoteTrackerState,
   message: VoteTrackerMessage,
-) -> actor.Next( VoteTrackerMessage,VoteTrackerState) {
+) -> actor.Next(VoteTrackerState, VoteTrackerMessage) {
   case message {
     VotePost(client, user_id, post_id, vote_type) -> {
       handle_vote(state, client, user_id, post_id, vote_type)
@@ -133,7 +130,6 @@ fn handle_message(
             VoteTrackerState(
               votes: new_votes,
               target_votes: new_target_votes,
-              user_karma: state.user_karma,
             )
 
           let new_score = utils.calculate_karma(new_counts.0, new_counts.1)
@@ -152,11 +148,6 @@ fn handle_message(
         }
       }
     }
-
-    GetVoteStats(target_id) -> {
-      // Internal message, no response needed
-      actor.continue(state)
-    }
   }
 }
 
@@ -166,12 +157,12 @@ fn handle_vote(
   user_id: Id,
   target_id: Id,
   vote_type: VoteType,
-) -> actor.Next(VoteTrackerMessage, VoteTrackerState) {
+) -> actor.Next(VoteTrackerState, VoteTrackerMessage) {
   let vote_key = make_vote_key(user_id, target_id)
 
   let result = case dict.get(state.votes, vote_key) {
     Ok(existing_vote) -> {
-      // User already voted, update the vote
+      // User already voted, check if same vote type
       case existing_vote.vote_type == vote_type {
         True -> {
           // Same vote type, no change
@@ -180,7 +171,11 @@ fn handle_vote(
         False -> {
           // Different vote type, update
           let updated_vote =
-            Vote(..existing_vote, vote_type: vote_type, created_at: utils.get_current_timestamp())
+            Vote(
+              ..existing_vote,
+              vote_type: vote_type,
+              created_at: utils.get_current_timestamp(),
+            )
 
           let new_votes = dict.insert(state.votes, vote_key, updated_vote)
 
@@ -189,11 +184,11 @@ fn handle_vote(
             dict.get(state.target_votes, target_id)
             |> result.unwrap(#(0, 0))
 
-         let new_counts = case existing_vote.vote_type, vote_type {
-  types.Upvote, types.Downvote -> #(upvotes - 1, downvotes + 1)
-  types.Downvote, types.Upvote -> #(upvotes + 1, downvotes - 1)
-  _, _ -> #(upvotes, downvotes)
-}
+          let new_counts = case existing_vote.vote_type, vote_type {
+            types.Upvote, types.Downvote -> #(upvotes - 1, downvotes + 1)
+            types.Downvote, types.Upvote -> #(upvotes + 1, downvotes - 1)
+            _, _ -> #(upvotes, downvotes)
+          }
 
           let new_target_votes =
             dict.insert(state.target_votes, target_id, new_counts)
@@ -202,15 +197,10 @@ fn handle_vote(
             VoteTrackerState(
               votes: new_votes,
               target_votes: new_target_votes,
-              user_karma: state.user_karma,
             )
 
           let new_score = utils.calculate_karma(new_counts.0, new_counts.1)
-          let user_karma =
-            dict.get(state.user_karma, user_id)
-            |> result.unwrap(0)
-
-          Ok(#(new_state, new_score, user_karma))
+          Ok(#(new_state, new_score))
         }
       }
     }
@@ -232,9 +222,9 @@ fn handle_vote(
         |> result.unwrap(#(0, 0))
 
       let new_counts = case vote_type {
-  types.Upvote -> #(upvotes + 1, downvotes)
-  types.Downvote -> #(upvotes, downvotes + 1)
-}
+        types.Upvote -> #(upvotes + 1, downvotes)
+        types.Downvote -> #(upvotes, downvotes + 1)
+      }
 
       let new_target_votes =
         dict.insert(state.target_votes, target_id, new_counts)
@@ -243,21 +233,16 @@ fn handle_vote(
         VoteTrackerState(
           votes: new_votes,
           target_votes: new_target_votes,
-          user_karma: state.user_karma,
         )
 
       let new_score = utils.calculate_karma(new_counts.0, new_counts.1)
-      let user_karma =
-        dict.get(state.user_karma, user_id)
-        |> result.unwrap(0)
-
-      Ok(#(new_state, new_score, user_karma))
+      Ok(#(new_state, new_score))
     }
   }
 
   case result {
-    Ok(#(new_state, new_score, user_karma)) -> {
-      process.send(client, protocol.VoteRecorded(target_id, new_score, user_karma))
+    Ok(#(new_state, new_score)) -> {
+      process.send(client, protocol.VoteRecorded(target_id, new_score, 0))
       actor.continue(new_state)
     }
     Error(error) -> {
