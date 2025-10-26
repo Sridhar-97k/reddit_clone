@@ -3,6 +3,7 @@ import gleam/io
 import gleam/erlang/process
 import engine/core
 import client/simulator
+import client/simulation_types
 
 pub fn main() -> Nil {
   io.println("🎮 Reddit Clone - Distributed System Simulation")
@@ -14,8 +15,8 @@ pub fn main() -> Nil {
   io.println("✅ Engine started successfully\n")
   
   // Create simulation config
-  let config = simulator.default_config()
-  
+  // let config = simulator.large_scale_config()
+  let config = simulation_types.large_scale_config()
   // Start simulator
   io.println("🎬 Starting Simulator...")
   let assert Ok(sim) = simulator.start(engine, config)
@@ -69,7 +70,7 @@ pub fn main_custom(num_users: Int, num_subreddits: Int) -> Nil {
   let assert Ok(engine) = core.start()
   
   // Custom config
-  let config = simulator.SimulationConfig(
+  let config = simulation_types.SimulationConfig(
     num_users: num_users,
     num_subreddits: num_subreddits,
     zipf_skewness: 1.0,
