@@ -6,11 +6,7 @@ import gleam/string
 import gleam/float
 import gleam/result
 import engine/metrics_collector
-import client/simulation_types  // CHANGED: Import shared types instead of simulator
-
-// Use type aliases for clarity
-pub type SimulationMetrics = simulation_types.SimulationMetrics
-pub type SimulationConfig = simulation_types.SimulationConfig
+import client/simulation_types
 
 // ============================================================================
 // Report Generation
@@ -19,8 +15,8 @@ pub type SimulationConfig = simulation_types.SimulationConfig
 /// Generate a comprehensive performance report
 pub fn generate_report(
   snapshot: metrics_collector.MetricsSnapshot,
-  sim_metrics: SimulationMetrics,
-  config: SimulationConfig,
+  sim_metrics: simulation_types.SimulationMetrics,
+  config: simulation_types.SimulationConfig,
 ) -> String {
   let header = generate_header()
   let summary = generate_summary_section(snapshot, sim_metrics, config)
@@ -56,8 +52,8 @@ fn generate_header() -> String {
 
 fn generate_summary_section(
   snapshot: metrics_collector.MetricsSnapshot,
-  sim_metrics: SimulationMetrics,
-  config: SimulationConfig,
+  sim_metrics: simulation_types.SimulationMetrics,
+  config: simulation_types.SimulationConfig,
 ) -> String {
   "## Executive Summary\n" <>
   "\n" <>
@@ -178,7 +174,7 @@ fn generate_error_rows(snapshot: metrics_collector.MetricsSnapshot) -> String {
   })
 }
 
-fn generate_zipf_section(config: SimulationConfig) -> String {
+fn generate_zipf_section(config: simulation_types.SimulationConfig) -> String {
   "## Zipf Distribution Implementation\n" <>
   "\n" <>
   "The simulation implements Zipf distribution (skewness = " <> float_to_string(config.zipf_skewness) <> ") for subreddit popularity:\n" <>
@@ -208,7 +204,7 @@ fn generate_zipf_section(config: SimulationConfig) -> String {
 
 fn generate_conclusions(
   snapshot: metrics_collector.MetricsSnapshot,
-  sim_metrics: SimulationMetrics,
+  sim_metrics: simulation_types.SimulationMetrics,
 ) -> String {
   "## Conclusions\n" <>
   "\n" <>

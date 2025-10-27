@@ -41,19 +41,38 @@ pub fn generate_request_id() -> Id {
 }
 
 // ============================================================================
-// Timestamp Utilities
+// Timestamp Utilities - FIXED!
 // ============================================================================
 
-/// Get current timestamp in milliseconds
-/// Note: In actual implementation, use erlang:system_time(millisecond)
+/// Get current timestamp in milliseconds using Erlang system_time
 pub fn get_current_timestamp() -> Timestamp {
-  // Placeholder - will use Erlang interop in real implementation
-  0
+  erlang_system_time_millisecond()
 }
 
 /// Calculate time difference in seconds
 pub fn time_diff_seconds(start: Timestamp, end: Timestamp) -> Int {
   { end - start } / 1000
+}
+
+// ============================================================================
+// Erlang FFI for System Time
+// ============================================================================
+
+// Call erlang:system_time(millisecond) directly
+// The Erlang function signature is: system_time(Unit) -> integer()
+// where Unit can be: second | millisecond | microsecond | nanosecond
+@external(erlang, "erlang", "system_time")
+fn erlang_system_time(unit: ErlangTimeUnit) -> Int
+
+// Erlang time unit type (we'll pass millisecond as an atom)
+type ErlangTimeUnit
+
+// Create the millisecond atom for Erlang
+@external(erlang, "shared_ffi", "millisecond_unit")
+fn millisecond_unit() -> ErlangTimeUnit
+
+fn erlang_system_time_millisecond() -> Int {
+  erlang_system_time(millisecond_unit())
 }
 
 // ============================================================================
@@ -182,7 +201,6 @@ pub fn sort_posts_by_top(posts: List(Post)) -> List(Post) {
 }
 
 /// Calculate "hot" score (Reddit's hot algorithm simplified)
-/// Score = log(max(|score|, 1)) + (age_in_hours / 12.5)
 fn calculate_hot_score(post: Post) -> Int {
   let score = calculate_post_score(post)
   let abs_score = int.absolute_value(score)

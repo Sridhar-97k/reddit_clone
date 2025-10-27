@@ -1,4 +1,5 @@
 // File Writer - Writes reports to disk
+import gleam/dynamic
 import gleam/result
 import gleam/io
 
@@ -8,14 +9,16 @@ import gleam/io
 
 /// Write content to a file
 pub fn write_file(filename: String, content: String) -> Result(Nil, String) {
+  // Erlang file:write_file returns 'ok' or {error, Reason}
   case erlang_write_file(filename, content) {
-    Ok(_) -> {
+    True -> {
       io.println("📄 Report saved to: " <> filename)
       Ok(Nil)
     }
-    Error(reason) -> {
-      io.println("❌ Failed to write file: " <> reason)
-      Error(reason)
+    False -> {
+      let msg = "Failed to write file"
+      io.println("❌ " <> msg)
+      Error(msg)
     }
   }
 }
@@ -27,8 +30,8 @@ pub fn write_timestamped_report(content: String) -> Result(Nil, String) {
 }
 
 // ============================================================================
-// Erlang FFI
+// Erlang FFI - Returns True if successful, False if error
 // ============================================================================
 
-@external(erlang, "file", "write_file")
-fn erlang_write_file(filename: String, content: String) -> Result(String, String)
+@external(erlang, "engine_ffi", "write_file")
+fn erlang_write_file(filename: String, content: String) -> Bool

@@ -446,15 +446,18 @@ fn pad_left(str: String, width: Int) -> String {
 
 fn string_length(s: String) -> Int {
   // Placeholder - in real code use string.length
-  case s {
-    "" -> 0
-    _ -> 10 // Approximate
-  }
+  string.length(s)
+  // case s {
+  //   "" -> 0
+  //   _ -> 10 // Approximate
+  // }
 }
 
 fn repeat_string(str: String, times: Int) -> String {
-  case times <= 0 {
-    True -> ""
-    False -> str <> repeat_string(str, times - 1)
-  }
+  string.repeat(str, times)
+  // case times <= 0 {
+  //   True -> ""
+  //   False -> str <> repeat_string(str, times - 1)
+  // }
+
 }
