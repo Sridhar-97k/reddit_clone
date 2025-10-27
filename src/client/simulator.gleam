@@ -13,6 +13,7 @@ import engine/metrics_collector
 import engine/report_generator
 import engine/file_writer
 import client/zipf
+import client/connection_scheduler
 import client/simulation_types.{type SimulationConfig, type SimulationMetrics}
 import shared/protocol.{type ClientRequest, type EngineResponse}
 import shared/types.{type Id, type VoteType, Downvote, Upvote}
@@ -453,6 +454,15 @@ fn float_to_string(f: Float) -> String {
 // ============================================================================
 
 fn simulate_user_activities(state: SimulatorState) -> SimulatorState {
+  
+  // // Start connection/disconnection scheduler
+  // io.println("\n🔄 Starting connection/disconnection cycles...")
+  // let assert Ok(scheduler) = connection_scheduler.start(
+  //   state.users,
+  //   state.config.connection_cycle_seconds
+  // )
+  // process.send(scheduler, connection_scheduler.StartCycle)
+  
   let mut_state = list.fold(state.users, state, fn(acc_state, user) {
     // Calculate action count based on user's subreddit popularity
     // Users in popular subreddits post more
