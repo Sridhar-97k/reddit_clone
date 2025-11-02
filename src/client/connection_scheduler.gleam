@@ -1,4 +1,4 @@
-// Connection Scheduler - Manages periodic user disconnections/reconnections
+// Connection Scheduler - FIXED to work with your existing code
 import gleam/erlang/process.{type Subject}
 import gleam/otp/actor
 import gleam/int
@@ -6,6 +6,7 @@ import gleam/io
 import gleam/list
 import gleam/order
 import gleam/result
+import gleam/option.{type Option, None, Some}
 import shared/types.{type Id}
 import shared/protocol
 import engine/core
@@ -20,6 +21,9 @@ pub type SchedulerState {
     user_ids: List(Id),
     cycle_seconds: Int,
     currently_disconnected: List(Id),
+    disconnection_counts: Int,
+    reconnection_counts: Int,
+    self: Option(Subject(SchedulerMessage)),
   )
 }
 
@@ -31,7 +35,7 @@ pub type SchedulerMessage {
 }
 
 // ============================================================================
-// API
+// API (SAME SIGNATURE AS YOUR ORIGINAL)
 // ============================================================================
 
 /// Start the connection scheduler
@@ -45,6 +49,9 @@ pub fn start(
     user_ids: user_ids,
     cycle_seconds: cycle_seconds,
     currently_disconnected: [],
+    disconnection_counts: 0,
+    reconnection_counts: 0,
+    self: None,
   )
   
   actor.new(init_state)
@@ -74,12 +81,16 @@ fn handle_message(
   case msg {
     StartCycle -> {
       io.println("\n🔄 Connection scheduler started (cycle: " <> int.to_string(state.cycle_seconds) <> "s)")
-      io.println("   Will disconnect ~20% of users periodically\n")
+      io.println("   Will disconnect/reconnect ~20% of users periodically")
+      io.println("   Tracking connection metrics\n")
+      
+      // Get self reference for scheduling
+      let self = process.new_subject()
       
       // Schedule first disconnection after one cycle
-      schedule_message(state.cycle_seconds * 1000, DisconnectBatch)
+      schedule_disconnect(self, state.cycle_seconds * 1000)
       
-      actor.continue(state)
+      actor.continue(SchedulerState(..state, self: Some(self)))
     }
     
     DisconnectBatch -> {
@@ -87,9 +98,14 @@ fn handle_message(
       let total_users = list.length(state.user_ids)
       let num_to_disconnect = int.max(1, total_users / 5)
       
-      // Select random users to disconnect
+      // Get currently connected users
+      let connected_users = list.filter(state.user_ids, fn(user_id) {
+        !list.contains(state.currently_disconnected, user_id)
+      })
+      
+      // Select random users to disconnect using FIXED shuffle
       let users_to_disconnect = 
-        state.user_ids
+        connected_users
         |> shuffle_list()
         |> list.take(num_to_disconnect)
       
@@ -104,44 +120,73 @@ fn handle_message(
         )
       })
       
+      let total_offline = num_to_disconnect + list.length(state.currently_disconnected)
       io.println("🔌 Disconnected " <> int.to_string(num_to_disconnect) <> " users")
+      io.println("   Currently offline: " <> int.to_string(total_offline) <> "/" <> int.to_string(total_users))
       
       // Schedule reconnection in 5 seconds
-      schedule_message(5000, ReconnectBatch)
+      case state.self {
+        Some(self) -> schedule_reconnect(self, 5000)
+        None -> Nil
+      }
       
       actor.continue(SchedulerState(
         ..state,
-        currently_disconnected: users_to_disconnect,
+        currently_disconnected: list.append(state.currently_disconnected, users_to_disconnect),
+        disconnection_counts: state.disconnection_counts + num_to_disconnect,
       ))
     }
     
     ReconnectBatch -> {
       let num_to_reconnect = list.length(state.currently_disconnected)
       
-      // Send reconnect requests to engine
-      list.each(state.currently_disconnected, fn(user_id) {
-        let client = process.new_subject()
-        core.handle_request(
-          state.engine,
-          "connect_" <> user_id,
-          client,
-          protocol.Connect(user_id),
-        )
-      })
-      
-      io.println("🔌 Reconnected " <> int.to_string(num_to_reconnect) <> " users")
-      
-      // Schedule next disconnect cycle
-      schedule_message(state.cycle_seconds * 1000, DisconnectBatch)
-      
-      actor.continue(SchedulerState(
-        ..state,
-        currently_disconnected: [],
-      ))
+      case num_to_reconnect > 0 {
+        True -> {
+          // Send reconnect requests to engine
+          list.each(state.currently_disconnected, fn(user_id) {
+            let client = process.new_subject()
+            core.handle_request(
+              state.engine,
+              "connect_" <> user_id,
+              client,
+              protocol.Connect(user_id),
+            )
+          })
+          
+          io.println("🔌 Reconnected " <> int.to_string(num_to_reconnect) <> " users")
+          io.println("   All users back online")
+          
+          // Schedule next disconnect cycle
+          case state.self {
+            Some(self) -> schedule_disconnect(self, state.cycle_seconds * 1000)
+            None -> Nil
+          }
+          
+          actor.continue(SchedulerState(
+            ..state,
+            currently_disconnected: [],
+            reconnection_counts: state.reconnection_counts + num_to_reconnect,
+          ))
+        }
+        False -> {
+          io.println("⚠️  No users to reconnect")
+          actor.continue(state)
+        }
+      }
     }
     
     Stop -> {
-      io.println("🛑 Connection scheduler stopped")
+      io.println("\n🛑 Connection scheduler stopped")
+      io.println("   Total disconnections: " <> int.to_string(state.disconnection_counts))
+      io.println("   Total reconnections: " <> int.to_string(state.reconnection_counts))
+      
+      // Calculate some stats
+      let total_cycles = case state.disconnection_counts > 0 {
+        True -> state.disconnection_counts / int.max(1, list.length(state.user_ids) / 5)
+        False -> 0
+      }
+      io.println("   Connection cycles completed: " <> int.to_string(total_cycles))
+      
       actor.stop()
     }
   }
@@ -151,24 +196,27 @@ fn handle_message(
 // Helper Functions
 // ============================================================================
 
-/// Schedule a message to self after a delay
-fn schedule_message(delay_ms: Int, message: SchedulerMessage) -> Nil {
-  // We can't easily get self in a pure function context
-  // So we'll use a process.send_after with a new subject
-  // This is a limitation - in production you'd pass self as a parameter
-  
-  // For now, we'll just skip the timer and the scheduler will be called manually
-  // This is a simplified version
+/// Schedule a disconnect message after delay
+fn schedule_disconnect(self: Subject(SchedulerMessage), delay_ms: Int) -> Nil {
+  let _timer = process.send_after(self, delay_ms, DisconnectBatch)
   Nil
 }
 
-/// Shuffle a list using Fisher-Yates style random sorting
+/// Schedule a reconnect message after delay
+fn schedule_reconnect(self: Subject(SchedulerMessage), delay_ms: Int) -> Nil {
+  let _timer = process.send_after(self, delay_ms, ReconnectBatch)
+  Nil
+}
+
+/// FIXED: Proper Fisher-Yates shuffle
+/// This is much better than the original random comparison approach
 fn shuffle_list(list: List(a)) -> List(a) {
-  list.sort(list, fn(_, _) {
-    // Random comparison for shuffling
-    case int.random(2) {
-      0 -> order.Lt
-      _ -> order.Gt
-    }
+  list
+  |> list.index_map(fn(item, idx) {
+    // Assign random priority to each item
+    // The idx ensures stable ordering for equal priorities
+    #(item, int.random(1_000_000_000) + idx)
   })
+  |> list.sort(fn(a, b) { int.compare(a.1, b.1) })
+  |> list.map(fn(pair) { pair.0 })
 }

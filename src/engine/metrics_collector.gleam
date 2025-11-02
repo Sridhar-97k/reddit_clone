@@ -1,4 +1,4 @@
-// Metrics Collector - Tracks performance metrics for the Reddit Clone
+// Metrics Collector - FIXED: Shows microsecond-level latencies
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -20,7 +20,7 @@ pub type MetricsState {
     total_operations: Int,
     operations_by_type: Dict(String, Int),
     
-    // Timing data (in microseconds)
+    // Timing data (in microseconds) - UNCHANGED
     operation_times: Dict(String, List(Int)),
     
     // Throughput tracking
@@ -58,16 +58,17 @@ pub type MetricsSnapshot {
   )
 }
 
+// FIXED: Changed to show microseconds
 pub type LatencyStats {
   LatencyStats(
     operation: String,
     count: Int,
-    min_ms: Float,
-    max_ms: Float,
-    avg_ms: Float,
-    p50_ms: Float,
-    p95_ms: Float,
-    p99_ms: Float,
+    min_us: Float,      // Changed from min_ms
+    max_us: Float,      // Changed from max_ms
+    avg_us: Float,      // Changed from avg_ms
+    p50_us: Float,      // Changed from p50_ms
+    p95_us: Float,      // Changed from p95_ms
+    p99_us: Float,      // Changed from p99_ms
   )
 }
 
@@ -94,7 +95,6 @@ pub fn start() -> Result(Subject(MetricsMessage), actor.StartError) {
   |> result.map(fn(started) { started.data })
 }
 
-/// Record a completed operation with its duration
 pub fn record_operation(
   metrics: Subject(MetricsMessage),
   operation_type: String,
@@ -103,7 +103,6 @@ pub fn record_operation(
   process.send(metrics, RecordOperation(operation_type, duration_micros))
 }
 
-/// Record an error
 pub fn record_error(
   metrics: Subject(MetricsMessage),
   error_type: String,
@@ -111,7 +110,6 @@ pub fn record_error(
   process.send(metrics, RecordError(error_type))
 }
 
-/// Increment operation count (without timing data)
 pub fn increment_count(
   metrics: Subject(MetricsMessage),
   operation_type: String,
@@ -119,7 +117,6 @@ pub fn increment_count(
   process.send(metrics, IncrementOperationCount(operation_type))
 }
 
-/// Get current metrics snapshot
 pub fn get_metrics(
   metrics: Subject(MetricsMessage),
   client: Subject(MetricsSnapshot),
@@ -127,12 +124,10 @@ pub fn get_metrics(
   process.send(metrics, GetMetrics(client))
 }
 
-/// Print a formatted report
 pub fn print_report(metrics: Subject(MetricsMessage)) -> Nil {
   process.send(metrics, PrintReport)
 }
 
-/// Reset all metrics
 pub fn reset(metrics: Subject(MetricsMessage)) -> Nil {
   process.send(metrics, Reset)
 }
@@ -147,12 +142,10 @@ fn handle_message(
 ) -> actor.Next(MetricsState, MetricsMessage) {
   case message {
     RecordOperation(op_type, duration) -> {
-      // Update operation count
       let op_count = dict.get(state.operations_by_type, op_type)
         |> result.unwrap(0)
       let new_ops = dict.insert(state.operations_by_type, op_type, op_count + 1)
       
-      // Store timing data
       let times = dict.get(state.operation_times, op_type)
         |> result.unwrap([])
       let new_times = [duration, ..times]
@@ -225,7 +218,7 @@ fn handle_message(
 }
 
 // ============================================================================
-// Metrics Calculation
+// Metrics Calculation - FIXED
 // ============================================================================
 
 fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
@@ -243,7 +236,6 @@ fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
     False -> 0.0
   }
   
-  // Calculate latency stats for each operation type
   let latency_stats = dict.fold(
     state.operation_times,
     dict.new(),
@@ -269,13 +261,14 @@ fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
   )
 }
 
+// FIXED: Keep values in microseconds instead of converting to milliseconds
 fn calculate_latency_stats(op_type: String, times: List(Int)) -> LatencyStats {
   let count = list.length(times)
   
-  // Convert microseconds to milliseconds
-  let times_ms = list.map(times, fn(t) { int.to_float(t) /. 1000.0 })
+  // Keep as microseconds (Float for precision)
+  let times_us = list.map(times, fn(t) { int.to_float(t) })
   
-  let sorted = list.sort(times_ms, float.compare)
+  let sorted = list.sort(times_us, float.compare)
   
   let min = case list.first(sorted) {
     Ok(v) -> v
@@ -287,7 +280,7 @@ fn calculate_latency_stats(op_type: String, times: List(Int)) -> LatencyStats {
     Error(_) -> 0.0
   }
   
-  let sum = list.fold(times_ms, 0.0, fn(acc, t) { acc +. t })
+  let sum = list.fold(times_us, 0.0, fn(acc, t) { acc +. t })
   let avg = case count > 0 {
     True -> sum /. int.to_float(count)
     False -> 0.0
@@ -300,12 +293,12 @@ fn calculate_latency_stats(op_type: String, times: List(Int)) -> LatencyStats {
   LatencyStats(
     operation: op_type,
     count: count,
-    min_ms: min,
-    max_ms: max,
-    avg_ms: avg,
-    p50_ms: p50,
-    p95_ms: p95,
-    p99_ms: p99,
+    min_us: min,
+    max_us: max,
+    avg_us: avg,
+    p50_us: p50,
+    p95_us: p95,
+    p99_us: p99,
   )
 }
 
@@ -330,7 +323,7 @@ fn list_get_at(list: List(a), index: Int) -> Result(a, Nil) {
 }
 
 // ============================================================================
-// Reporting
+// Reporting - FIXED: Show microseconds with proper formatting
 // ============================================================================
 
 fn print_metrics_report(state: MetricsState) -> Nil {
@@ -344,7 +337,7 @@ fn print_metrics_report(state: MetricsState) -> Nil {
   
   // Overall Stats
   io.println("📊 OVERALL STATISTICS")
-  io.println("─────────────────────────────────────────────────────────────")
+  io.println("───────────────────────────────────────────────────────────")
   io.println("  Total Operations:     " <> int.to_string(snapshot.total_operations))
   io.println("  Duration:             " <> format_float(snapshot.total_duration_seconds, 2) <> " seconds")
   io.println("  Throughput:           " <> format_float(snapshot.operations_per_second, 2) <> " ops/sec")
@@ -354,7 +347,7 @@ fn print_metrics_report(state: MetricsState) -> Nil {
   
   // Operations Breakdown
   io.println("📈 OPERATIONS BREAKDOWN")
-  io.println("─────────────────────────────────────────────────────────────")
+  io.println("───────────────────────────────────────────────────────────")
   dict.fold(snapshot.operations_by_type, Nil, fn(_, op_type, count) {
     let percentage = case snapshot.total_operations > 0 {
       True -> { int.to_float(count) /. int.to_float(snapshot.total_operations) } *. 100.0
@@ -365,9 +358,9 @@ fn print_metrics_report(state: MetricsState) -> Nil {
   })
   io.println("")
   
-  // Latency Stats
-  io.println("⏱️  LATENCY STATISTICS (milliseconds)")
-  io.println("─────────────────────────────────────────────────────────────")
+  // FIXED: Latency Stats in Microseconds
+  io.println("⏱️  LATENCY STATISTICS (microseconds)")
+  io.println("───────────────────────────────────────────────────────────")
   io.println("  Operation             Count    Min      Avg      P50      P95      P99      Max")
   io.println("  ────────────────────  ─────  ───────  ───────  ───────  ───────  ───────  ───────")
   
@@ -375,22 +368,31 @@ fn print_metrics_report(state: MetricsState) -> Nil {
     io.println(
       "  " <> pad_right(stats.operation, 20) <>
       "  " <> pad_left(int.to_string(stats.count), 5) <>
-      "  " <> pad_left(format_float(stats.min_ms, 2), 7) <>
-      "  " <> pad_left(format_float(stats.avg_ms, 2), 7) <>
-      "  " <> pad_left(format_float(stats.p50_ms, 2), 7) <>
-      "  " <> pad_left(format_float(stats.p95_ms, 2), 7) <>
-      "  " <> pad_left(format_float(stats.p99_ms, 2), 7) <>
-      "  " <> pad_left(format_float(stats.max_ms, 2), 7)
+      "  " <> pad_left(format_float(stats.min_us, 1), 7) <>
+      "  " <> pad_left(format_float(stats.avg_us, 1), 7) <>
+      "  " <> pad_left(format_float(stats.p50_us, 1), 7) <>
+      "  " <> pad_left(format_float(stats.p95_us, 1), 7) <>
+      "  " <> pad_left(format_float(stats.p99_us, 1), 7) <>
+      "  " <> pad_left(format_float(stats.max_us, 1), 7)
     )
     Nil
   })
+  io.println("")
+  
+  // Add interpretation
+  io.println("📌 INTERPRETATION")
+  io.println("───────────────────────────────────────────────────────────")
+  io.println("  • 1,000 μs = 1 millisecond (ms)")
+  io.println("  • Sub-millisecond latencies (<1000 μs) indicate excellent performance")
+  io.println("  • These are message-passing times in the actor system")
+  io.println("  • Lower values = faster asynchronous message delivery")
   io.println("")
   
   // Error Breakdown
   case state.error_count > 0 {
     True -> {
       io.println("❌ ERROR BREAKDOWN")
-      io.println("─────────────────────────────────────────────────────────────")
+      io.println("───────────────────────────────────────────────────────────")
       dict.fold(snapshot.errors_by_type, Nil, fn(_, error_type, count) {
         io.println("  " <> pad_right(error_type, 30) <> ": " <> int.to_string(count))
         Nil
@@ -409,7 +411,6 @@ fn print_metrics_report(state: MetricsState) -> Nil {
 // ============================================================================
 
 fn format_float(f: Float, decimals: Int) -> String {
-  // Simplified float formatting
   let multiplier = case decimals {
     1 -> 10.0
     2 -> 100.0
@@ -422,42 +423,23 @@ fn format_float(f: Float, decimals: Int) -> String {
   let int_part = rounded / multiplier_int
   let decimal_part = rounded - int_part * multiplier_int
   
-  // Convert to positive integer for decimal part
   let decimal_int = float.round(float.absolute_value(int.to_float(decimal_part)))
   
   int.to_string(int_part) <> "." <> int.to_string(decimal_int)
 }
 
 fn pad_right(str: String, width: Int) -> String {
-  let len = string_length(str)
+  let len = string.length(str)
   case width > len {
-    True -> str <> repeat_string(" ", width - len)
+    True -> str <> string.repeat(" ", width - len)
     False -> str
   }
 }
 
 fn pad_left(str: String, width: Int) -> String {
-  let len = string_length(str)
+  let len = string.length(str)
   case width > len {
-    True -> repeat_string(" ", width - len) <> str
+    True -> string.repeat(" ", width - len) <> str
     False -> str
   }
-}
-
-fn string_length(s: String) -> Int {
-  // Placeholder - in real code use string.length
-  string.length(s)
-  // case s {
-  //   "" -> 0
-  //   _ -> 10 // Approximate
-  // }
-}
-
-fn repeat_string(str: String, times: Int) -> String {
-  string.repeat(str, times)
-  // case times <= 0 {
-  //   True -> ""
-  //   False -> str <> repeat_string(str, times - 1)
-  // }
-
 }

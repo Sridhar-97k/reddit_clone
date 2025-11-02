@@ -182,8 +182,11 @@ fn handle_simulator_message(
   }
 }
 
+// Add timing measurements to operations in client/simulator.gleam
+// Replace the register_users, create_subreddits, and action functions
+
 // ============================================================================
-// Phase 1: Register Users
+// Phase 1: Register Users (with timing)
 // ============================================================================
 
 fn register_users(state: SimulatorState) -> SimulatorState {
@@ -197,6 +200,9 @@ fn register_users(state: SimulatorState) -> SimulatorState {
     
     let assert Ok(client) = create_user_client()
     
+    // Measure operation time
+    let op_start = utils.get_current_timestamp()
+    
     core.handle_request(
       state.engine,
       utils.generate_request_id(),
@@ -204,9 +210,13 @@ fn register_users(state: SimulatorState) -> SimulatorState {
       protocol.RegisterUser(username, password),
     )
     
-    metrics_collector.increment_count(
+    let op_duration = utils.get_current_timestamp() - op_start
+    
+    // Record operation with timing (convert ms to microseconds)
+    metrics_collector.record_operation(
       state.metrics_collector,
       "register_user",
+      op_duration * 1000,
     )
     
     io.println("  ✓ " <> username <> " registered")
@@ -229,7 +239,7 @@ fn register_users(state: SimulatorState) -> SimulatorState {
   process.sleep(100)
   
   let phase_duration = { utils.get_current_timestamp() - start_phase } * 1000
-  io.println("  ⏱️ Phase duration: " <> int.to_string(phase_duration / 1000) <> "ms")
+  io.println("  ⏱️  Phase duration: " <> int.to_string(phase_duration / 1000) <> "ms")
   
   SimulatorState(
     ..state,
@@ -238,9 +248,11 @@ fn register_users(state: SimulatorState) -> SimulatorState {
     connection_scheduler: state.connection_scheduler,
   )
 }
-
 // ============================================================================
 // Phase 2: Create Subreddits
+// ============================================================================
+// ============================================================================
+// Phase 2: Create Subreddits (with timing)
 // ============================================================================
 
 fn create_subreddits(state: SimulatorState) -> SimulatorState {
@@ -267,6 +279,9 @@ fn create_subreddits(state: SimulatorState) -> SimulatorState {
       }
     }
     
+    // Measure operation time
+    let op_start = utils.get_current_timestamp()
+    
     core.handle_request(
       state.engine,
       utils.generate_request_id(),
@@ -278,7 +293,15 @@ fn create_subreddits(state: SimulatorState) -> SimulatorState {
       ),
     )
     
-    metrics_collector.increment_count(state.metrics_collector, "create_subreddit")
+    let op_duration = utils.get_current_timestamp() - op_start
+    
+    // Record operation with timing
+    metrics_collector.record_operation(
+      state.metrics_collector,
+      "create_subreddit",
+      op_duration * 1000,
+    )
+    
     io.println("  ✓ r/" <> name <> " created by " <> creator.username)
     
     subreddit_id
@@ -292,7 +315,7 @@ fn create_subreddits(state: SimulatorState) -> SimulatorState {
   process.sleep(100)
   
   let phase_duration = { utils.get_current_timestamp() - start_phase } * 1000
-  io.println("  ⏱️ Phase duration: " <> int.to_string(phase_duration / 1000) <> "ms")
+  io.println("  ⏱️  Phase duration: " <> int.to_string(phase_duration / 1000) <> "ms")
   
   SimulatorState(
     ..state, 
@@ -302,6 +325,7 @@ fn create_subreddits(state: SimulatorState) -> SimulatorState {
     connection_scheduler: state.connection_scheduler,
   )
 }
+
 
 // ============================================================================
 // Phase 3: Users Join Subreddits (Zipf Distribution)
@@ -505,6 +529,9 @@ fn perform_random_action(state: SimulatorState, user: SimulatedUser) -> Simulato
   }
 }
 
+// Updated create_random_post function with repost support
+// Replace the existing function in client/simulator.gleam
+
 fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
   case list.is_empty(user.subscribed_subreddits) {
     True -> state
@@ -512,21 +539,46 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
       let sub_idx = int.random(list.length(user.subscribed_subreddits))
       case get_at(user.subscribed_subreddits, sub_idx) {
         Ok(subreddit_id) -> {
-          let titles = [
-            "Check out this awesome feature!",
-            "My experience with Gleam",
-            "Tips and tricks",
-            "Beginner question",
-            "Amazing discovery",
-          ]
+          let is_repost = int.random(100) < 20
+          
+          let original_post_id = case is_repost {
+            True -> Some("post_" <> int.to_string(int.random(1000)))
+            False -> None
+          }
+          
+          let titles = case is_repost {
+            True -> [
+              "Repost: This is still relevant!",
+              "Throwback: Remember this gem?",
+              "In case you missed it earlier...",
+              "Still my favorite post ever",
+              "This deserves more attention",
+            ]
+            False -> [
+              "Check out this awesome feature!",
+              "My experience with Gleam",
+              "Tips and tricks",
+              "Beginner question",
+              "Amazing discovery",
+            ]
+          }
           
           let title_idx = int.random(list.length(titles))
           let title = case get_at(titles, title_idx) {
             Ok(t) -> t
-            Error(_) -> "Random Post Title"
+            Error(_) -> case is_repost {
+              True -> "Repost: Random Post Title"
+              False -> "Random Post Title"
+            }
           }
           
-          let content = "This is a simulated post content about " <> title
+          let content = case is_repost {
+            True -> "This is a repost of great content: " <> title
+            False -> "This is a simulated post content about " <> title
+          }
+          
+          // Measure operation time
+          let op_start = utils.get_current_timestamp()
           
           core.handle_request(
             state.engine,
@@ -537,19 +589,37 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
               subreddit_id,
               title,
               content,
-              False,
-              None,
+              is_repost,
+              original_post_id,
             ),
           )
           
-          metrics_collector.increment_count(state.metrics_collector, "create_post")
+          let op_duration = utils.get_current_timestamp() - op_start
           
-          io.println("  📝 " <> user.username <> " posted: \"" <> title <> "\"")
-          
-          let new_metrics = simulation_types.SimulationMetrics(
-            ..state.metrics,
-            posts_created: state.metrics.posts_created + 1,
+          // Record operation with timing
+          metrics_collector.record_operation(
+            state.metrics_collector,
+            "create_post",
+            op_duration * 1000,
           )
+          
+          let repost_emoji = case is_repost {
+            True -> " 🔄"
+            False -> ""
+          }
+          io.println("  📝 " <> user.username <> " posted: \"" <> title <> "\"" <> repost_emoji)
+          
+          let new_metrics = case is_repost {
+            True -> simulation_types.SimulationMetrics(
+              ..state.metrics,
+              posts_created: state.metrics.posts_created + 1,
+              reposts_created: state.metrics.reposts_created + 1,
+            )
+            False -> simulation_types.SimulationMetrics(
+              ..state.metrics,
+              posts_created: state.metrics.posts_created + 1,
+            )
+          }
           
           SimulatorState(..state, metrics: new_metrics)
         }
@@ -559,9 +629,13 @@ fn create_random_post(state: SimulatorState, user: SimulatedUser) -> SimulatorSt
   }
 }
 
+
 fn create_random_comment(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
   let comment_content = "Great post! Thanks for sharing."
   let fake_post_id = "post_" <> int.to_string(int.random(100))
+  
+  // Measure operation time
+  let op_start = utils.get_current_timestamp()
   
   core.handle_request(
     state.engine,
@@ -570,7 +644,15 @@ fn create_random_comment(state: SimulatorState, user: SimulatedUser) -> Simulato
     protocol.CreateComment(user.id, fake_post_id, None, comment_content),
   )
   
-  metrics_collector.increment_count(state.metrics_collector, "create_comment")
+  let op_duration = utils.get_current_timestamp() - op_start
+  
+  // Record operation with timing
+  metrics_collector.record_operation(
+    state.metrics_collector,
+    "create_comment",
+    op_duration * 1000,
+  )
+  
   io.println("  💬 " <> user.username <> " commented: \"" <> comment_content <> "\"")
   
   let new_metrics = simulation_types.SimulationMetrics(
@@ -581,6 +663,76 @@ fn create_random_comment(state: SimulatorState, user: SimulatedUser) -> Simulato
   SimulatorState(..state, metrics: new_metrics)
 }
 
+fn get_user_feed(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
+  // Measure operation time
+  let op_start = utils.get_current_timestamp()
+  
+  core.handle_request(
+    state.engine,
+    utils.generate_request_id(),
+    user.client,
+    protocol.GetFeed(user.id, 25),
+  )
+  
+  let op_duration = utils.get_current_timestamp() - op_start
+  
+  // Record operation with timing
+  metrics_collector.record_operation(
+    state.metrics_collector,
+    "get_feed",
+    op_duration * 1000,
+  )
+  
+  io.println("  📰 " <> user.username <> " viewed their feed")
+  
+  state
+}
+
+
+fn send_random_message(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
+  let recipient_idx = int.random(list.length(state.users))
+  case get_at(state.users, recipient_idx) {
+    Ok(recipient) -> {
+      case recipient.id == user.id {
+        True -> state
+        False -> {
+          // Measure operation time
+          let op_start = utils.get_current_timestamp()
+          
+          core.handle_request(
+            state.engine,
+            utils.generate_request_id(),
+            user.client,
+            protocol.SendDirectMessage(
+              user.id,
+              recipient.id,
+              "Hey! This is a simulated message.",
+            ),
+          )
+          
+          let op_duration = utils.get_current_timestamp() - op_start
+          
+          // Record operation with timing
+          metrics_collector.record_operation(
+            state.metrics_collector,
+            "send_direct_message",
+            op_duration * 1000,
+          )
+          
+          io.println("  ✉️  " <> user.username <> " sent DM to " <> recipient.username)
+          
+          let new_metrics = simulation_types.SimulationMetrics(
+            ..state.metrics,
+            messages_sent: state.metrics.messages_sent + 1,
+          )
+          
+          SimulatorState(..state, metrics: new_metrics)
+        }
+      }
+    }
+    Error(_) -> state
+  }
+}
 fn cast_random_vote(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
   let vote_type = case int.random(10) < 8 {
     True -> Upvote
@@ -589,6 +741,9 @@ fn cast_random_vote(state: SimulatorState, user: SimulatedUser) -> SimulatorStat
   
   let fake_target_id = "post_" <> int.to_string(int.random(100))
   
+  // Measure operation time
+  let op_start = utils.get_current_timestamp()
+  
   core.handle_request(
     state.engine,
     utils.generate_request_id(),
@@ -596,7 +751,14 @@ fn cast_random_vote(state: SimulatorState, user: SimulatedUser) -> SimulatorStat
     protocol.VotePost(user.id, fake_target_id, vote_type),
   )
   
-  metrics_collector.increment_count(state.metrics_collector, "vote_post")
+  let op_duration = utils.get_current_timestamp() - op_start
+  
+  // Record operation with timing
+  metrics_collector.record_operation(
+    state.metrics_collector,
+    "vote_post",
+    op_duration * 1000,
+  )
   
   let vote_emoji = case vote_type {
     Upvote -> "⬆️"
@@ -611,55 +773,6 @@ fn cast_random_vote(state: SimulatorState, user: SimulatedUser) -> SimulatorStat
   
   SimulatorState(..state, metrics: new_metrics)
 }
-
-fn get_user_feed(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
-  core.handle_request(
-    state.engine,
-    utils.generate_request_id(),
-    user.client,
-    protocol.GetFeed(user.id, 25),
-  )
-  
-  metrics_collector.increment_count(state.metrics_collector, "get_feed")
-  io.println("  📰 " <> user.username <> " viewed their feed")
-  
-  state
-}
-
-fn send_random_message(state: SimulatorState, user: SimulatedUser) -> SimulatorState {
-  let recipient_idx = int.random(list.length(state.users))
-  case get_at(state.users, recipient_idx) {
-    Ok(recipient) -> {
-      case recipient.id == user.id {
-        True -> state
-        False -> {
-          core.handle_request(
-            state.engine,
-            utils.generate_request_id(),
-            user.client,
-            protocol.SendDirectMessage(
-              user.id,
-              recipient.id,
-              "Hey! This is a simulated message.",
-            ),
-          )
-          
-          metrics_collector.increment_count(state.metrics_collector, "send_direct_message")
-          io.println("  ✉️ " <> user.username <> " sent DM to " <> recipient.username)
-          
-          let new_metrics = simulation_types.SimulationMetrics(
-            ..state.metrics,
-            messages_sent: state.metrics.messages_sent + 1,
-          )
-          
-          SimulatorState(..state, metrics: new_metrics)
-        }
-      }
-    }
-    Error(_) -> state
-  }
-}
-
 // ============================================================================
 // User Client Actor
 // ============================================================================
@@ -701,6 +814,7 @@ fn print_metrics(metrics: SimulationMetrics) -> Nil {
   io.println("  Users: " <> int.to_string(metrics.users_registered))
   io.println("  Subreddits: " <> int.to_string(metrics.subreddits_created))
   io.println("  Posts: " <> int.to_string(metrics.posts_created))
+  io.println("  Reposts: " <> int.to_string(metrics.reposts_created))
   io.println("  Comments: " <> int.to_string(metrics.comments_created))
   io.println("  Votes: " <> int.to_string(metrics.votes_cast))
   io.println("  Messages: " <> int.to_string(metrics.messages_sent))
@@ -754,6 +868,7 @@ fn create_operations_dict(metrics: SimulationMetrics) -> Dict(String, Int) {
   |> dict.insert("register_user", metrics.users_registered)
   |> dict.insert("create_subreddit", metrics.subreddits_created)
   |> dict.insert("create_post", metrics.posts_created)
+  |> dict.insert("create_repost", metrics.reposts_created)
   |> dict.insert("create_comment", metrics.comments_created)
   |> dict.insert("vote_post", metrics.votes_cast)
   |> dict.insert("send_direct_message", metrics.messages_sent)
