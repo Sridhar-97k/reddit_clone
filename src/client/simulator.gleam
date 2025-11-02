@@ -839,28 +839,25 @@ fn print_status(state: SimulatorState) -> Nil {
 // ============================================================================
 
 fn export_report_to_file(state: SimulatorState) -> Nil {
-  let snapshot = metrics_collector.MetricsSnapshot(
-    total_operations: state.metrics.users_registered + state.metrics.posts_created +
-                      state.metrics.comments_created + state.metrics.votes_cast +
-                      state.metrics.messages_sent,
-    operations_by_type: create_operations_dict(state.metrics),
-    total_duration_seconds: 10.0,
-    operations_per_second: 100.0,
-    latency_stats: dict.new(),
-    error_rate: 0.0,
-    errors_by_type: dict.new(),
-  )
+  io.println("\n📊 Generating performance report...")
   
-  let report = report_generator.generate_report(
-    snapshot,
-    state.metrics,
-    state.config,
-  )
-  
-  case file_writer.write_timestamped_report(report) {
-    Ok(_) -> io.println("✅ Report successfully saved!")
-    Error(_) -> io.println("❌ Failed to save report")
-  }
+  // Use the callback pattern to get metrics synchronously
+  metrics_collector.export_snapshot(state.metrics_collector, fn(snapshot) {
+    // Now we have the REAL snapshot with latency data!
+    let report = report_generator.generate_report(
+      snapshot,
+      state.metrics,
+      state.config,
+    )
+    
+    case file_writer.write_timestamped_report(report) {
+      Ok(_) -> {
+        io.println("✅ Report successfully saved to PERFORMANCE_REPORT.md")
+        io.println("   ✨ Includes full latency statistics!")
+      }
+      Error(_) -> io.println("❌ Failed to save report")
+    }
+  })
 }
 
 fn create_operations_dict(metrics: SimulationMetrics) -> Dict(String, Int) {

@@ -1,4 +1,4 @@
-// Report Generator - FIXED: Better statistics formatting
+// Report Generator - FIXED: Remove conclusions, fix latency display
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -12,6 +12,7 @@ import client/simulation_types
 // Report Generation
 // ============================================================================
 
+/// Generate a comprehensive performance report
 pub fn generate_report(
   snapshot: metrics_collector.MetricsSnapshot,
   sim_metrics: simulation_types.SimulationMetrics,
@@ -23,15 +24,15 @@ pub fn generate_report(
   let latency = generate_latency_section(snapshot)
   let errors = generate_errors_section(snapshot)
   let zipf = generate_zipf_section(config)
-  let conclusions = generate_conclusions(snapshot, sim_metrics)
   
+  // REMOVED: conclusions section
   header <> "\n\n" <>
   summary <> "\n\n" <>
   operations <> "\n\n" <>
   latency <> "\n\n" <>
   errors <> "\n\n" <>
   zipf <> "\n\n" <>
-  conclusions
+  "---\n\n**Report generated automatically by the Reddit Clone simulator**\n"
 }
 
 // ============================================================================
@@ -127,32 +128,52 @@ fn generate_operation_rows(snapshot: metrics_collector.MetricsSnapshot) -> Strin
   })
 }
 
-// FIXED: Show latencies in microseconds with proper interpretation
+// FIXED: Show latencies in microseconds with actual data
 fn generate_latency_section(snapshot: metrics_collector.MetricsSnapshot) -> String {
-  "## Latency Analysis (Microseconds)\n" <>
-  "\n" <>
-  "**Note**: All latencies are measured in **microseconds (μs)**.\n" <>
-  "- 1,000 μs = 1 millisecond (ms)\n" <>
-  "- Sub-millisecond latencies indicate excellent performance\n" <>
-  "- These represent message-passing times in the actor system\n" <>
-  "\n" <>
-  "| Operation | Count | Min (μs) | Avg (μs) | P50 (μs) | P95 (μs) | P99 (μs) | Max (μs) |\n" <>
-  "|-----------|-------|----------|----------|----------|----------|----------|----------|\n" <>
-  generate_latency_rows(snapshot) <>
-  "\n" <>
-  "### Performance Interpretation\n" <>
-  "\n" <>
-  generate_performance_analysis(snapshot) <>
-  "\n" <>
-  "### Actor Model Benefits\n" <>
-  "\n" <>
-  "- **Non-blocking**: Operations don't wait for responses\n" <>
-  "- **Concurrent**: Thousands of operations processed simultaneously\n" <>
-  "- **Fault-tolerant**: Actor crashes don't affect other actors\n" <>
-  "- **Scalable**: Can distribute across multiple machines\n"
+  let has_latency_data = dict.size(snapshot.latency_stats) > 0
+  
+  case has_latency_data {
+    True -> {
+      "## Latency Analysis (Microseconds)\n" <>
+      "\n" <>
+      "**Note**: All latencies are measured in **microseconds (μs)**.\n" <>
+      "- 1,000 μs = 1 millisecond (ms)\n" <>
+      "- Sub-millisecond latencies indicate excellent performance\n" <>
+      "- These represent message-passing times in the actor system\n" <>
+      "\n" <>
+      "| Operation | Count | Min (μs) | Avg (μs) | P50 (μs) | P95 (μs) | P99 (μs) | Max (μs) |\n" <>
+      "|-----------|-------|----------|----------|----------|----------|----------|----------|\n" <>
+      generate_latency_rows(snapshot) <>
+      "\n" <>
+      "### Performance Interpretation\n" <>
+      "\n" <>
+      generate_performance_analysis(snapshot) <>
+      "\n" <>
+      "### Actor Model Benefits\n" <>
+      "\n" <>
+      "- **Non-blocking**: Operations don't wait for responses\n" <>
+      "- **Concurrent**: Thousands of operations processed simultaneously\n" <>
+      "- **Fault-tolerant**: Actor crashes don't affect other actors\n" <>
+      "- **Scalable**: Can distribute across multiple machines\n"
+    }
+    False -> {
+      "## Latency Analysis\n" <>
+      "\n" <>
+      "**Note**: No latency data was collected during this simulation.\n" <>
+      "This may occur if operations completed too quickly to measure or if\n" <>
+      "timing collection was not enabled.\n" <>
+      "\n" <>
+      "### Actor Model Benefits\n" <>
+      "\n" <>
+      "- **Non-blocking**: Operations don't wait for responses\n" <>
+      "- **Concurrent**: Thousands of operations processed simultaneously\n" <>
+      "- **Fault-tolerant**: Actor crashes don't affect other actors\n" <>
+      "- **Scalable**: Can distribute across multiple machines\n"
+    }
+  }
 }
 
-// FIXED: Format as microseconds
+// FIXED: Format as microseconds with proper number formatting
 fn generate_latency_rows(snapshot: metrics_collector.MetricsSnapshot) -> String {
   dict.fold(snapshot.latency_stats, "", fn(acc, _key, stats) {
     acc <> "| " <> stats.operation <>
@@ -166,24 +187,30 @@ fn generate_latency_rows(snapshot: metrics_collector.MetricsSnapshot) -> String 
   })
 }
 
-// NEW: Add performance analysis
 fn generate_performance_analysis(snapshot: metrics_collector.MetricsSnapshot) -> String {
-  let avg_latency = calculate_average_latency(snapshot.latency_stats)
-  
-  let performance_rating = case avg_latency {
-    x if x <. 100.0 -> "⭐⭐⭐⭐⭐ **Excellent** (sub-100μs average)"
-    x if x <. 500.0 -> "⭐⭐⭐⭐ **Very Good** (sub-500μs average)"
-    x if x <. 1000.0 -> "⭐⭐⭐ **Good** (sub-1ms average)"
-    x if x <. 5000.0 -> "⭐⭐ **Acceptable** (1-5ms average)"
-    _ -> "⭐ **Needs Optimization** (>5ms average)"
+  case dict.size(snapshot.latency_stats) > 0 {
+    True -> {
+      let avg_latency = calculate_average_latency(snapshot.latency_stats)
+      
+      let performance_rating = case avg_latency {
+        x if x <. 100.0 -> "⭐⭐⭐⭐⭐ **Excellent** (sub-100μs average)"
+        x if x <. 500.0 -> "⭐⭐⭐⭐ **Very Good** (sub-500μs average)"
+        x if x <. 1000.0 -> "⭐⭐⭐ **Good** (sub-1ms average)"
+        x if x <. 5000.0 -> "⭐⭐ **Acceptable** (1-5ms average)"
+        _ -> "⭐ **Needs Optimization** (>5ms average)"
+      }
+      
+      "**System Performance**: " <> performance_rating <> "\n" <>
+      "\n" <>
+      "**Average Latency**: " <> format_float(avg_latency, 1) <> " μs (" <> format_float(avg_latency /. 1000.0, 3) <> " ms)\n" <>
+      "\n" <>
+      "**Fastest Operation**: " <> get_fastest_operation(snapshot.latency_stats) <> "\n" <>
+      "**Slowest Operation**: " <> get_slowest_operation(snapshot.latency_stats) <> "\n"
+    }
+    False -> {
+      "**System Performance**: Unable to calculate (no latency data)\n"
+    }
   }
-  
-  "**System Performance**: " <> performance_rating <> "\n" <>
-  "\n" <>
-  "**Average Latency**: " <> format_float(avg_latency, 1) <> " μs (" <> format_float(avg_latency /. 1000.0, 3) <> " ms)\n" <>
-  "\n" <>
-  "**Fastest Operation**: " <> get_fastest_operation(snapshot.latency_stats) <> "\n" <>
-  "**Slowest Operation**: " <> get_slowest_operation(snapshot.latency_stats) <> "\n"
 }
 
 fn calculate_average_latency(stats: Dict(String, metrics_collector.LatencyStats)) -> Float {
@@ -283,46 +310,7 @@ fn generate_zipf_section(config: simulation_types.SimulationConfig) -> String {
   "distributions that mirror actual social media platforms.\n"
 }
 
-fn generate_conclusions(
-  snapshot: metrics_collector.MetricsSnapshot,
-  sim_metrics: simulation_types.SimulationMetrics,
-) -> String {
-  "## Conclusions\n" <>
-  "\n" <>
-  "### System Performance\n" <>
-  "\n" <>
-  "The Reddit clone successfully demonstrates:\n" <>
-  "\n" <>
-  "1. **High Concurrency**: " <> int.to_string(snapshot.total_operations) <> " operations processed concurrently\n" <>
-  "2. **Scalability**: Actor model enables thousands of concurrent users\n" <>
-  "3. **Reliability**: " <> format_float({1.0 -. snapshot.error_rate} *. 100.0, 1) <> "% success rate\n" <>
-  "4. **Realistic Simulation**: Zipf distribution creates authentic usage patterns\n" <>
-  "\n" <>
-  "### Architecture Strengths\n" <>
-  "\n" <>
-  "- **Actor Model**: Isolated state, message passing, fault tolerance\n" <>
-  "- **Erlang VM**: Proven platform for distributed, concurrent systems\n" <>
-  "- **Gleam**: Type-safe functional programming with Erlang interop\n" <>
-  "\n" <>
-  "### Performance Highlights\n" <>
-  "\n" <>
-  "- **Sub-millisecond latencies** for most operations\n" <>
-  "- **" <> format_float(snapshot.operations_per_second, 0) <> " operations/second** sustained throughput\n" <>
-  "- **Zero-copy message passing** via Erlang VM\n" <>
-  "- **Concurrent actor execution** across all CPU cores\n" <>
-  "\n" <>
-  "### Future Enhancements\n" <>
-  "\n" <>
-  "- Add persistence layer (ETS/PostgreSQL)\n" <>
-  "- Implement feed caching for popular subreddits\n" <>
-  "- Add connection pool management\n" <>
-  "- Scale to 10,000+ concurrent users\n" <>
-  "- Add WebSocket/REST API layer (Part II)\n" <>
-  "\n" <>
-  "---\n" <>
-  "\n" <>
-  "**Report generated automatically by the Reddit Clone simulator**\n"
-}
+// REMOVED: generate_conclusions function
 
 // ============================================================================
 // Helper Functions
@@ -371,5 +359,5 @@ fn float_to_string(f: Float) -> String {
 }
 
 fn get_current_date() -> String {
-  "2024"
-} 
+  "2025"
+}

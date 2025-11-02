@@ -1,4 +1,4 @@
-// Metrics Collector - FIXED: Shows microsecond-level latencies
+// Metrics Collector - Complete file with export functionality
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Subject}
 import gleam/int
@@ -20,7 +20,7 @@ pub type MetricsState {
     total_operations: Int,
     operations_by_type: Dict(String, Int),
     
-    // Timing data (in microseconds) - UNCHANGED
+    // Timing data (in microseconds)
     operation_times: Dict(String, List(Int)),
     
     // Throughput tracking
@@ -44,6 +44,7 @@ pub type MetricsMessage {
   GetMetrics(client: Subject(MetricsSnapshot))
   PrintReport
   Reset
+  ExportSnapshot(callback: fn(MetricsSnapshot) -> Nil)
 }
 
 pub type MetricsSnapshot {
@@ -58,17 +59,16 @@ pub type MetricsSnapshot {
   )
 }
 
-// FIXED: Changed to show microseconds
 pub type LatencyStats {
   LatencyStats(
     operation: String,
     count: Int,
-    min_us: Float,      // Changed from min_ms
-    max_us: Float,      // Changed from max_ms
-    avg_us: Float,      // Changed from avg_ms
-    p50_us: Float,      // Changed from p50_ms
-    p95_us: Float,      // Changed from p95_ms
-    p99_us: Float,      // Changed from p99_ms
+    min_us: Float,
+    max_us: Float,
+    avg_us: Float,
+    p50_us: Float,
+    p95_us: Float,
+    p99_us: Float,
   )
 }
 
@@ -95,6 +95,7 @@ pub fn start() -> Result(Subject(MetricsMessage), actor.StartError) {
   |> result.map(fn(started) { started.data })
 }
 
+/// Record a completed operation with its duration
 pub fn record_operation(
   metrics: Subject(MetricsMessage),
   operation_type: String,
@@ -103,6 +104,7 @@ pub fn record_operation(
   process.send(metrics, RecordOperation(operation_type, duration_micros))
 }
 
+/// Record an error
 pub fn record_error(
   metrics: Subject(MetricsMessage),
   error_type: String,
@@ -110,6 +112,7 @@ pub fn record_error(
   process.send(metrics, RecordError(error_type))
 }
 
+/// Increment operation count (without timing data)
 pub fn increment_count(
   metrics: Subject(MetricsMessage),
   operation_type: String,
@@ -117,6 +120,7 @@ pub fn increment_count(
   process.send(metrics, IncrementOperationCount(operation_type))
 }
 
+/// Get current metrics snapshot
 pub fn get_metrics(
   metrics: Subject(MetricsMessage),
   client: Subject(MetricsSnapshot),
@@ -124,12 +128,22 @@ pub fn get_metrics(
   process.send(metrics, GetMetrics(client))
 }
 
+/// Print a formatted report
 pub fn print_report(metrics: Subject(MetricsMessage)) -> Nil {
   process.send(metrics, PrintReport)
 }
 
+/// Reset all metrics
 pub fn reset(metrics: Subject(MetricsMessage)) -> Nil {
   process.send(metrics, Reset)
+}
+
+/// Export metrics snapshot with callback - USE THIS FOR FILE REPORTS
+pub fn export_snapshot(
+  metrics: Subject(MetricsMessage),
+  callback: fn(MetricsSnapshot) -> Nil,
+) -> Nil {
+  process.send(metrics, ExportSnapshot(callback))
 }
 
 // ============================================================================
@@ -142,10 +156,12 @@ fn handle_message(
 ) -> actor.Next(MetricsState, MetricsMessage) {
   case message {
     RecordOperation(op_type, duration) -> {
+      // Update operation count
       let op_count = dict.get(state.operations_by_type, op_type)
         |> result.unwrap(0)
       let new_ops = dict.insert(state.operations_by_type, op_type, op_count + 1)
       
+      // Store timing data
       let times = dict.get(state.operation_times, op_type)
         |> result.unwrap([])
       let new_times = [duration, ..times]
@@ -214,11 +230,17 @@ fn handle_message(
       )
       actor.continue(new_state)
     }
+    
+    ExportSnapshot(callback) -> {
+      let snapshot = create_snapshot(state)
+      callback(snapshot)
+      actor.continue(state)
+    }
   }
 }
 
 // ============================================================================
-// Metrics Calculation - FIXED
+// Metrics Calculation
 // ============================================================================
 
 fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
@@ -236,6 +258,7 @@ fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
     False -> 0.0
   }
   
+  // Calculate latency stats for each operation type
   let latency_stats = dict.fold(
     state.operation_times,
     dict.new(),
@@ -261,7 +284,6 @@ fn create_snapshot(state: MetricsState) -> MetricsSnapshot {
   )
 }
 
-// FIXED: Keep values in microseconds instead of converting to milliseconds
 fn calculate_latency_stats(op_type: String, times: List(Int)) -> LatencyStats {
   let count = list.length(times)
   
@@ -323,7 +345,7 @@ fn list_get_at(list: List(a), index: Int) -> Result(a, Nil) {
 }
 
 // ============================================================================
-// Reporting - FIXED: Show microseconds with proper formatting
+// Reporting
 // ============================================================================
 
 fn print_metrics_report(state: MetricsState) -> Nil {
@@ -358,7 +380,7 @@ fn print_metrics_report(state: MetricsState) -> Nil {
   })
   io.println("")
   
-  // FIXED: Latency Stats in Microseconds
+  // Latency Stats
   io.println("⏱️  LATENCY STATISTICS (microseconds)")
   io.println("───────────────────────────────────────────────────────────")
   io.println("  Operation             Count    Min      Avg      P50      P95      P99      Max")
