@@ -59,11 +59,10 @@ pub type PostStorageMessage {
 // API
 // ============================================================================
 
+
+// FIXED: Using actor.start(init_state(), handle_message) for gleam_otp 0.14.1
 pub fn start() -> Result(Subject(PostStorageMessage), actor.StartError) {
-  actor.new(init_state())
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  actor.start(init_state(), handle_message)
 }
 
 pub fn create_post(
@@ -186,10 +185,13 @@ fn init_state() -> PostStorageState {
   )
 }
 
+
+// FIXED: Parameter order changed - message FIRST, then state
+// FIXED: Return type parameters swapped - PostStorageMessage first
 fn handle_message(
-  state: PostStorageState,
   message: PostStorageMessage,
-) -> actor.Next(PostStorageState, PostStorageMessage) {
+  state: PostStorageState,
+) -> actor.Next(PostStorageMessage, PostStorageState) {
   case message {
     CreatePost(
       client,
@@ -473,10 +475,12 @@ GetFeed(client, user_id, limit) -> {
   actor.continue(state)
 }
 
+
     GetHomeFeed(client, user_id, limit) -> {
   // TODO: Get user's subscribed subreddits from user_registry
   // For now, same as GetFeed
-  handle_message(state, GetFeed(client, user_id, limit))
+  // FIXED: Recursive call with correct parameter order (message, state)
+  handle_message(GetFeed(client, user_id, limit), state)
 }
   }
 }

@@ -62,11 +62,10 @@ pub type UserRegistryMessage {
 // API
 // ============================================================================
 
+
+// FIXED: Using actor.start(init_state(), handle_message) for gleam_otp 0.14.1
 pub fn start() -> Result(Subject(UserRegistryMessage), actor.StartError) {
-  actor.new(init_state())
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  actor.start(init_state(), handle_message)
 }
 
 pub fn register_user(
@@ -158,10 +157,13 @@ fn init_state() -> UserRegistryState {
   )
 }
 
+
+// FIXED: Parameter order changed - message FIRST, then state
+// FIXED: Return type parameters swapped - UserRegistryMessage first
 pub fn handle_message(
-  state: UserRegistryState,
   message: UserRegistryMessage,
-) -> actor.Next(UserRegistryState, UserRegistryMessage) {
+  state: UserRegistryState,
+) -> actor.Next(UserRegistryMessage, UserRegistryState) {
   case message {
     RegisterUser(client, username, password) -> {
       let result = case utils.validate_username(username) {

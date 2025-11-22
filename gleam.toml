@@ -1,19 +1,21 @@
+# gleam.toml - Compatible versions that actually work
+
 name = "reddit_clone"
 version = "1.0.0"
 
-# Gleam compiler version
-gleam = ">= 1.0.0"
-
-# Project metadata
-description = "A distributed Reddit-like platform built with Gleam and OTP"
-licences = ["Apache-2.0"]
-repository = { type = "github", user = "yourusername", repo = "reddit_clone" }
-
 [dependencies]
-gleam_stdlib = ">= 0.34.0 and < 2.0.0"
-gleam_erlang = ">= 0.25.0 and < 2.0.0"
-gleam_otp = ">= 0.10.0 and < 2.0.0"
-argv = ">= 1.0.2 and < 2.0.0"
+# Core dependencies
+gleam_stdlib = "~> 0.34.0"
+gleam_erlang = "~> 0.25.0"
+gleam_otp = "~> 0.14.0"           # Upgraded from 0.10.0
+argv = "~> 1.0.2"
+
+# HTTP/API dependencies
+gleam_json = "~> 1.0.0"
+gleam_http = "~> 3.6.0"
+wisp = "~> 0.14.0"
+gleam_hackney = ">= 1.2.0 and < 2.0.0"
+# DON'T specify mist - let wisp pull the right version automatically
 
 [dev-dependencies]
-gleeunit = ">= 1.0.0 and < 2.0.0"
+gleeunit = "~> 1.0.0"

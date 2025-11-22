@@ -46,14 +46,9 @@ pub type SubredditMessage {
 // API
 // ============================================================================
 
-/// Compilation error here. Have to debug
-
-
+// FIXED: Using actor.start(init_state(), handle_message) for gleam_otp 0.14.1
 pub fn start() -> Result(Subject(SubredditMessage), actor.StartError) {
-  actor.new(init_state())
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  actor.start(init_state(), handle_message)
 }
 
 pub fn create_subreddit(
@@ -118,10 +113,12 @@ fn init_state() -> SubredditManagerState {
   )
 }
 
-fn handle_message(
-  state: SubredditManagerState,
+// FIXED: Parameter order changed - message FIRST, then state
+// FIXED: Return type parameters swapped - SubredditMessage first
+pub fn handle_message(
   message: SubredditMessage,
-) -> actor.Next(SubredditManagerState, SubredditMessage) {
+  state: SubredditManagerState,
+) -> actor.Next(SubredditMessage, SubredditManagerState) {
   case message {
     CreateSubreddit(client, name, description, creator_id) -> {
       let result = case utils.validate_subreddit_name(name) {

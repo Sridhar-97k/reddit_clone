@@ -69,10 +69,8 @@ pub fn start(
     action_count: 0,
   )
   
-  actor.new(init_state)
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  // FIXED: Use actor.start directly
+  actor.start(init_state, handle_message)
 }
 
 pub fn perform_action(
@@ -98,10 +96,12 @@ pub fn shutdown(user: Subject(UserActorMessage)) -> Nil {
 // Implementation
 // ============================================================================
 
+// FIXED: Changed parameter order - message first, then state
+// FIXED: Changed return type parameters
 fn handle_message(
-  state: UserActorState,
   message: UserActorMessage,
-) -> actor.Next(UserActorState, UserActorMessage) {
+  state: UserActorState,
+) -> actor.Next(UserActorMessage, UserActorState) {
   case message {
     PerformAction(action) -> {
       let new_state = execute_action(state, action)
@@ -140,7 +140,8 @@ fn handle_message(
     }
 
     Shutdown -> {
-      actor.stop()
+      // FIXED: Use actor.Stop instead of actor.stop()
+      actor.Stop(process.Normal)
     }
   }
 }

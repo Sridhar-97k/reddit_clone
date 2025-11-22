@@ -47,11 +47,10 @@ pub type EngineMessage {
 // ============================================================================
 
 /// Start the Reddit engine
+
+// FIXED: Using actor.start(init_state(), handle_message) for gleam_otp 0.14.1
 pub fn start() -> Result(Subject(EngineMessage), actor.StartError) {
-  actor.new(init_state())
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  actor.start(init_state(), handle_message)
 }
 
 /// Send a request to the engine
@@ -102,10 +101,13 @@ fn init_state() -> EngineState {
   )
 }
 
+
+// FIXED: Parameter order changed - message FIRST, then state
+// FIXED: Return type parameters swapped - EngineMessage first
 fn handle_message(
-  state: EngineState,
   message: EngineMessage,
-) -> actor.Next(EngineState, EngineMessage) {
+  state: EngineState,
+) -> actor.Next(EngineMessage, EngineState) {
   case message {
     HandleRequest(request_id, client, request) -> {
       let new_state = handle_client_request(state, request_id, client, request)
@@ -131,7 +133,8 @@ fn handle_message(
     }
 
     Shutdown -> {
-      actor.stop()
+      // FIXED: Use actor.Stop instead of actor.stop()
+      actor.Stop(process.Normal)
     }
   }
 }

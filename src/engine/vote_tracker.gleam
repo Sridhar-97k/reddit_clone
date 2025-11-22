@@ -44,11 +44,10 @@ pub type VoteTrackerMessage {
 // API
 // ============================================================================
 
+
+// FIXED: Using actor.start(init_state(), handle_message) for gleam_otp 0.14.1
 pub fn start() -> Result(Subject(VoteTrackerMessage), actor.StartError) {
-  actor.new(init_state())
-  |> actor.on_message(handle_message)
-  |> actor.start()
-  |> result.map(fn(started) { started.data })
+  actor.start(init_state(), handle_message)
 }
 
 pub fn vote_post(
@@ -91,10 +90,13 @@ fn init_state() -> VoteTrackerState {
   )
 }
 
+
+// FIXED: Parameter order changed - message FIRST, then state
+// FIXED: Return type parameters swapped - VoteTrackerMessage first
 fn handle_message(
-  state: VoteTrackerState,
   message: VoteTrackerMessage,
-) -> actor.Next(VoteTrackerState, VoteTrackerMessage) {
+  state: VoteTrackerState,
+) -> actor.Next(VoteTrackerMessage, VoteTrackerState) {
   case message {
     VotePost(client, user_id, post_id, vote_type) -> {
       handle_vote(state, client, user_id, post_id, vote_type)
@@ -108,32 +110,40 @@ fn handle_message(
       let vote_key = make_vote_key(user_id, target_id)
 
       let result = case dict.get(state.votes, vote_key) {
-        Error(_) -> Error(protocol.VoteNotFound(user_id, target_id))
         Ok(vote) -> {
           // Remove the vote
           let new_votes = dict.delete(state.votes, vote_key)
 
           // Update target vote counts
-          let #(upvotes, downvotes) =
-            dict.get(state.target_votes, target_id)
-            |> result.unwrap(#(0, 0))
+          case dict.get(state.target_votes, target_id) {
+            Ok(#(upvotes, downvotes)) -> {
+              let #(new_upvotes, new_downvotes) = case vote.vote_type {
+                types.Upvote -> #(upvotes - 1, downvotes)
+                types.Downvote -> #(upvotes, downvotes - 1)
+              }
 
-          let new_counts = case vote.vote_type {
-            types.Upvote -> #(upvotes - 1, downvotes)
-            types.Downvote -> #(upvotes, downvotes - 1)
+              let new_target_votes =
+                dict.insert(state.target_votes, target_id, #(
+                  new_upvotes,
+                  new_downvotes,
+                ))
+
+              let new_state =
+                VoteTrackerState(
+                  votes: new_votes,
+                  target_votes: new_target_votes,
+                )
+
+              let new_score = new_upvotes - new_downvotes
+              Ok(#(new_state, new_score))
+            }
+            Error(Nil) -> {
+              Error(protocol.InternalError("Target not found in vote counts"))
+            }
           }
-
-          let new_target_votes =
-            dict.insert(state.target_votes, target_id, new_counts)
-
-          let new_state =
-            VoteTrackerState(
-              votes: new_votes,
-              target_votes: new_target_votes,
-            )
-
-          let new_score = utils.calculate_karma(new_counts.0, new_counts.1)
-          Ok(#(new_state, new_score))
+        }
+        Error(Nil) -> {
+          Error(protocol.VoteNotFound(user_id, target_id))
         }
       }
 
@@ -151,13 +161,14 @@ fn handle_message(
   }
 }
 
+// FIXED: Return type parameters swapped - VoteTrackerMessage first
 fn handle_vote(
   state: VoteTrackerState,
   client: Subject(EngineResponse),
   user_id: Id,
   target_id: Id,
   vote_type: VoteType,
-) -> actor.Next(VoteTrackerState, VoteTrackerMessage) {
+) -> actor.Next(VoteTrackerMessage, VoteTrackerState) {
   let vote_key = make_vote_key(user_id, target_id)
 
   let result = case dict.get(state.votes, vote_key) {
