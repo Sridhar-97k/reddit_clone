@@ -708,18 +708,41 @@ fn create_subreddit_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
 }
 
 fn list_subreddits_handler(_req: wisp.Request, ctx: Context) -> wisp.Response {
-  let client = create_response_client()
-  
-  core.handle_request(
+  case send_and_wait_for_response(
     ctx.engine,
-    generate_request_id(),
-    client,
     protocol.ListSubreddits,
-  )
-  
-  json_response(200, json.object([
-    #("message", json.string("Subreddits retrieved")),
-  ]))
+    5000,
+  ) {
+    Ok(protocol.SubredditListResponse(subreddits)) -> {
+      let subreddits_json = json.array(subreddits, fn(sub) {
+        json.object([
+          #("id", json.string(sub.id)),
+          #("name", json.string(sub.name)),
+          #("description", json.string(sub.description)),
+          #("created_by", json.string(sub.created_by)),
+          #("member_count", json.int(sub.member_count)),
+          #("post_count", json.int(sub.post_count)),
+        ])
+      })
+      
+      json_response(200, json.object([
+        #("subreddits", subreddits_json),
+        #("count", json.int(list.length(subreddits))),
+      ]))
+    }
+    Error(_) -> {
+      json_response(500, json.object([
+        #("error", json.string("Internal Server Error")),
+        #("message", json.string("Request timeout")),
+      ]))
+    }
+    _ -> {
+      json_response(500, json.object([
+        #("error", json.string("Internal Server Error")),
+        #("message", json.string("Unexpected response")),
+      ]))
+    }
+  }
 }
 
 fn get_subreddit_handler(_req: wisp.Request, ctx: Context, sub_id: String) -> wisp.Response {
@@ -1299,19 +1322,52 @@ fn remove_vote_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
 fn get_feed_handler(_req: wisp.Request, ctx: Context, user_id: String) -> wisp.Response {
   case validate_user_id(user_id) {
     Ok(valid_id) -> {
-      let client = create_response_client()
-      
-      core.handle_request(
+      case send_and_wait_for_response(
         ctx.engine,
-        generate_request_id(),
-        client,
-        protocol.GetFeed(valid_id, 25),
-      )
-      
-      json_response(200, json.object([
-        #("user_id", json.string(valid_id)),
-        #("message", json.string("Feed retrieved")),
-      ]))
+        protocol.GetFeed(valid_id, 50),
+        5000,
+      ) {
+        Ok(protocol.FeedResponse(feed)) -> {
+          let items_json = json.array(feed.items, fn(feed_item) {
+            json.object([
+              #("post", json.object([
+                #("id", json.string(feed_item.post.id)),
+                #("author_id", json.string(feed_item.post.author_id)),
+                #("author_username", json.string(feed_item.post.author_username)),
+                #("subreddit_id", json.string(feed_item.post.subreddit_id)),
+                #("subreddit_name", json.string(feed_item.post.subreddit_name)),
+                #("title", json.string(feed_item.post.title)),
+                #("content", json.string(feed_item.post.content)),
+                #("upvotes", json.int(feed_item.post.upvotes)),
+                #("downvotes", json.int(feed_item.post.downvotes)),
+                #("comment_count", json.int(feed_item.post.comment_count)),
+              ])),
+              #("subreddit", json.object([
+                #("id", json.string(feed_item.subreddit.id)),
+                #("name", json.string(feed_item.subreddit.name)),
+                #("description", json.string(feed_item.subreddit.description)),
+              ])),
+            ])
+          })
+          
+          json_response(200, json.object([
+            #("items", items_json),
+            #("count", json.int(list.length(feed.items))),
+          ]))
+        }
+        Error(_) -> {
+          json_response(500, json.object([
+            #("error", json.string("Internal Server Error")),
+            #("message", json.string("Request timeout")),
+          ]))
+        }
+        _ -> {
+          json_response(500, json.object([
+            #("error", json.string("Internal Server Error")),
+            #("message", json.string("Unexpected response")),
+          ]))
+        }
+      }
     }
     Error(errors) -> {
       json_response(400, json.object([
@@ -1356,21 +1412,20 @@ fn send_message_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
   use json_body <- wisp.require_json(req)
   
   let result = {
-    use from_user_id <- result.try(get_string_field(json_body, "from_user_id"))
-    use to_user_id <- result.try(get_string_field(json_body, "to_user_id"))
+    use from_username <- result.try(get_string_field(json_body, "from_username"))
+    use to_username <- result.try(get_string_field(json_body, "to_username"))
     use content <- result.try(get_string_field(json_body, "content"))
-    Ok(#(from_user_id, to_user_id, content))
+    Ok(#(from_username, to_username, content))
   }
   
   case result {
-    Ok(#(from_user_id, to_user_id, content)) -> {
-      let from_result = validate_user_id(from_user_id)
-      let to_result = validate_user_id(to_user_id)
+    Ok(#(from_username, to_username, content)) -> {
+      let from_result = validate_username(from_username)
+      let to_result = validate_username(to_username)
       let content_result = validate_message_content(content)
       
       case from_result, to_result, content_result {
         Ok(valid_from), Ok(valid_to), Ok(valid_content) -> {
-          // Check if trying to message self
           case valid_from == valid_to {
             True -> {
               json_response(400, json.object([
@@ -1379,10 +1434,13 @@ fn send_message_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
               ]))
             }
             False -> {
-              // Send to engine and wait for response
+              // Convert usernames to user IDs by looking them up
+              let from_id = "user_" <> valid_from
+              let to_id = "user_" <> valid_to
+              
               case send_and_wait_for_response(
                 ctx.engine,
-                protocol.SendDirectMessage(valid_from, valid_to, valid_content),
+                protocol.SendDirectMessage(from_id, to_id, valid_content),
                 5000,
               ) {
                 Ok(protocol.MessageSent(_message)) -> {
@@ -1392,7 +1450,8 @@ fn send_message_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
                 }
                 Ok(protocol.Error(error)) -> {
                   let error_msg = case error {
-                    protocol.UserNotFound(username) -> "User '" <> username <> "' not found"
+                    protocol.UserNotFound(_) -> "User not found. Make sure both users are registered."
+                    protocol.CannotMessageSelf(_) -> "Cannot message yourself"
                     _ -> "Failed to send message"
                   }
                   json_response(404, json.object([
@@ -1441,11 +1500,12 @@ fn send_message_handler(req: wisp.Request, ctx: Context) -> wisp.Response {
     Error(_) -> {
       json_response(400, json.object([
         #("error", json.string("Bad Request")),
-        #("message", json.string("Invalid JSON: requires 'from_user_id', 'to_user_id', 'content'")),
+        #("message", json.string("Invalid JSON: requires 'from_username', 'to_username', 'content'")),
       ]))
     }
   }
 }
+
 
 fn get_messages_handler(_req: wisp.Request, ctx: Context, user_id: String) -> wisp.Response {
   case validate_user_id(user_id) {

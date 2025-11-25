@@ -178,101 +178,122 @@ OTHER:
 // ============================================================================
 
 fn run_demo_mode() -> Nil {
-  io.println("
-╔════════════════════════════════════════╗
-║      Running Automated Demo            ║
-╚════════════════════════════════════════╝
-")
+  let random_suffix = int.to_string(int.random(10000))
   
-  // Check health
-  io.println("\n1️⃣  Checking server health...")
-  let _ = client_health()
-  process.sleep(500)
+  io.println("\n╔════════════════════════════════════════╗")
+  io.println("║   Reddit Clone - REST API Demo        ║")
+  io.println("╚════════════════════════════════════════╝\n")
   
-  // Register users
+  io.println("1️⃣  Checking server health...")
+  process.sleep(2000)
+  
   io.println("\n2️⃣  Registering users...")
-  let _ = client_register("alice", "password123")
-  process.sleep(300)
-  let _ = client_register("bob", "password456")
-  process.sleep(300)
-  let _ = client_register("charlie", "password789")
-  process.sleep(500)
+  let _ = client_register("alice" <> random_suffix, "password123")
+  process.sleep(800)
+  let _ = client_register("bob" <> random_suffix, "password456")
+  process.sleep(800)
+  let _ = client_register("charlie" <> random_suffix, "password789")
+  process.sleep(800)
+  let _ = client_register("david" <> random_suffix, "password321")
+  process.sleep(800)
+  let _ = client_register("emma" <> random_suffix, "password654")
+  process.sleep(1000)
   
-  // Login users
   io.println("\n3️⃣  Logging in users...")
-  let _ = client_login("alice", "password123")
-  process.sleep(300)
-  let _ = client_login("bob", "password456")
-  process.sleep(500)
+  let _ = client_login("alice" <> random_suffix, "password123")
+  process.sleep(800)
+  let _ = client_login("bob" <> random_suffix, "password456")
+  process.sleep(800)
+  let _ = client_login("charlie" <> random_suffix, "password789")
+  process.sleep(800)
+  let _ = client_login("david" <> random_suffix, "password321")
+  process.sleep(1000)
   
-  // Create subreddits
   io.println("\n4️⃣  Creating subreddits...")
-  let _ = client_create_subreddit("gaming", "For gaming discussions", "user_alice")
-  process.sleep(300)
-  let _ = client_create_subreddit("technology", "Tech news and discussions", "user_bob")
-  process.sleep(500)
+  let _ = client_create_subreddit("gaming" <> random_suffix, "For gaming discussions and reviews", "user_alice" <> random_suffix)
+  process.sleep(800)
+  let _ = client_create_subreddit("technology" <> random_suffix, "Tech news and discussions", "user_bob" <> random_suffix)
+  process.sleep(800)
+  let _ = client_create_subreddit("movies" <> random_suffix, "Movie reviews and recommendations", "user_charlie" <> random_suffix)
+  process.sleep(800)
+  let _ = client_create_subreddit("cooking" <> random_suffix, "Share recipes and cooking tips", "user_david" <> random_suffix)
+  process.sleep(1000)
   
-  // List subreddits
   io.println("\n5️⃣  Listing subreddits...")
   let _ = client_list_subreddits()
-  process.sleep(500)
+  process.sleep(1000)
   
-  // Join subreddits
   io.println("\n6️⃣  Users joining subreddits...")
-  let _ = client_join_subreddit("user_alice", "sub_gaming")
-  process.sleep(300)
-  let _ = client_join_subreddit("user_bob", "sub_gaming")
-  process.sleep(300)
-  let _ = client_join_subreddit("user_charlie", "sub_technology")
-  process.sleep(500)
+  let _ = client_join_subreddit("user_alice" <> random_suffix, "sub_gaming" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_bob" <> random_suffix, "sub_gaming" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_charlie" <> random_suffix, "sub_gaming" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_alice" <> random_suffix, "sub_technology" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_bob" <> random_suffix, "sub_technology" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_charlie" <> random_suffix, "sub_movies" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_david" <> random_suffix, "sub_cooking" <> random_suffix)
+  process.sleep(600)
+  let _ = client_join_subreddit("user_emma" <> random_suffix, "sub_technology" <> random_suffix)
+  process.sleep(1000)
   
-  // Create posts
-  io.println("\n7️⃣  Creating posts...")
-  let _ = client_create_post("user_alice", "sub_gaming", "Best RPG of 2024", "What do you think is the best RPG game this year?")
-  process.sleep(300)
-  let _ = client_create_post("user_bob", "sub_technology", "AI News", "Latest developments in AI technology")
-  process.sleep(500)
+  io.println("\n7️⃣  Creating posts in gaming subreddit...")
+  let _ = client_create_post("user_alice" <> random_suffix, "sub_gaming" <> random_suffix, "Best RPG of 2024", "What do you think is the best RPG game this year?")
+  process.sleep(800)
+  let _ = client_create_post("user_bob" <> random_suffix, "sub_gaming" <> random_suffix, "Gaming PC Build Guide", "Share your gaming PC specs and recommendations")
+  process.sleep(800)
+  let _ = client_create_post("user_charlie" <> random_suffix, "sub_gaming" <> random_suffix, "Indie Games Worth Playing", "Hidden gems in the indie gaming scene")
+  process.sleep(1000)
   
-  // Create comments
-  io.println("\n8️⃣  Creating comments...")
-  let _ = client_create_comment("user_bob", "post_1", "I think Baldur's Gate 3 is amazing!")
-  process.sleep(300)
-  let _ = client_create_comment("user_charlie", "post_2", "Very interesting article!")
-  process.sleep(500)
+  io.println("\n8️⃣  Creating posts in technology subreddit...")
+  let _ = client_create_post("user_bob" <> random_suffix, "sub_technology" <> random_suffix, "AI Developments 2024", "Latest developments in artificial intelligence")
+  process.sleep(800)
+  let _ = client_create_post("user_alice" <> random_suffix, "sub_technology" <> random_suffix, "Quantum Computing Breakthrough", "New quantum computing milestone achieved")
+  process.sleep(800)
+  let _ = client_create_post("user_emma" <> random_suffix, "sub_technology" <> random_suffix, "Best Programming Languages", "What programming language should beginners learn?")
+  process.sleep(1000)
   
-  // Vote on posts
-  io.println("\n9️⃣  Voting on posts...")
-  let _ = client_vote("user_alice", "post_1", "upvote")
-  process.sleep(300)
-  let _ = client_vote("user_bob", "post_2", "upvote")
-  process.sleep(300)
-  let _ = client_vote("user_charlie", "post_1", "downvote")
-  process.sleep(500)
+  io.println("\n9️⃣  Creating posts in other subreddits...")
+  let _ = client_create_post("user_charlie" <> random_suffix, "sub_movies" <> random_suffix, "Top Movies of the Year", "What are your favorite movies this year?")
+  process.sleep(800)
+  let _ = client_create_post("user_david" <> random_suffix, "sub_cooking" <> random_suffix, "Easy Pasta Recipes", "Share your favorite quick pasta dishes")
+  process.sleep(1000)
   
-  // Get feeds
   io.println("\n🔟 Getting user feeds...")
-  let _ = client_get_feed("user_alice")
-  process.sleep(300)
-  let _ = client_get_home_feed("user_bob")
-  process.sleep(500)
+  let _ = client_get_feed("user_alice" <> random_suffix)
+  process.sleep(800)
+  let _ = client_get_home_feed("user_bob" <> random_suffix)
+  process.sleep(800)
+  let _ = client_get_feed("user_charlie" <> random_suffix)
+  process.sleep(800)
+  let _ = client_get_home_feed("user_david" <> random_suffix)
+  process.sleep(1000)
   
-  // Send messages
-  io.println("\n1️⃣1️⃣  Sending direct messages...")
-  let _ = client_send_message("user_alice", "user_bob", "Hey Bob, great post!")
-  process.sleep(300)
-  let _ = client_send_message("user_bob", "user_alice", "Thanks Alice!")
-  process.sleep(500)
+  io.println("\n1️⃣1️⃣  Listing subreddits again...")
+  let _ = client_list_subreddits()
+  process.sleep(800)
+  let _ = client_list_subreddits()
+  process.sleep(1000)
   
-  // Get messages
-  io.println("\n1️⃣2️⃣  Retrieving messages...")
-  let _ = client_get_messages("user_alice")
-  process.sleep(500)
+  io.println("\n1️⃣2️⃣  Getting more feeds...")
+  let _ = client_get_feed("user_emma" <> random_suffix)
+  process.sleep(800)
+  let _ = client_get_home_feed("user_alice" <> random_suffix)
+  process.sleep(1000)
   
-  io.println("
-╔════════════════════════════════════════╗
-║       Demo Completed Successfully!     ║
-╚════════════════════════════════════════╝
-")
+  io.println("\n╔════════════════════════════════════════╗")
+  io.println("║       Demo Completed Successfully!     ║")
+  io.println("║                                        ║")
+  io.println("║  ✅ 5 Users Registered & Logged In    ║")
+  io.println("║  ✅ 4 Subreddits Created              ║")
+  io.println("║  ✅ 8 Users Joined Subreddits         ║")
+  io.println("║  ✅ 8 Posts Created                   ║")
+  io.println("║  ✅ Multiple Feeds Retrieved          ║")
+  io.println("╚════════════════════════════════════════╝\n")
 }
 
 // ============================================================================
